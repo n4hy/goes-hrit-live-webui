@@ -1,0 +1,41 @@
+html, body {
+  margin: 0;
+  padding: 0;
+  background: #000;
+  color: #ddd;
+  font-family: sans-serif;
+  height: 100%;
+}
+
+#container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+}
+
+#controls {
+  padding: 8px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+#viewer {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+img {
+  max-width: 98vw;
+  max-height: 90vh;
+}
+
+#footer {
+  padding: 6px 10px;
+  text-align: right;
+  font-size: 14px;
+  color: #aaa;
+}

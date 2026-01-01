@@ -1,0 +1,19 @@
+[Unit]
+Description=GOES SSE Watcher (Server-Sent Events)
+After=network.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/goes_sse_watch.py
+Restart=always
+RestartSec=2
+User=www-data
+Group=www-data
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+ProtectHome=true
+ReadWritePaths=/var/www/goes
+
+[Install]
+WantedBy=multi-user.target

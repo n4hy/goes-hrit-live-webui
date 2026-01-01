@@ -1,0 +1,7 @@
+[Unit]
+Description=Publish latest GOES Full Disk images for web UI
+After=network.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/update_goes_multi_web.sh
