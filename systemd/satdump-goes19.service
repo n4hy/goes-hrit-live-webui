@@ -1,0 +1,22 @@
+[Unit]
+Description=SatDump GOES-19 HRIT (live, rtl-sdr)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+Group=pi
+Environment=SATDUMP_BIN=/home/pi/SatDump/build/satdump
+Environment=FREQ=1694.1e6
+Environment=SR=2.048e6
+Environment=GAIN=48
+Environment=OUTROOT=/home/pi/sat/goes19
+ExecStart=/usr/local/bin/run_satdump_goes19.sh
+Restart=always
+RestartSec=3
+Nice=-5
+LimitNOFILE=1048576
+
+[Install]
+WantedBy=multi-user.target

@@ -1,0 +1,8 @@
+[Unit]
+Description=Cleanup SatDump output older than TOOOLD_DAYS
+
+[Service]
+Type=oneshot
+User=root
+Group=root
+ExecStart=/usr/local/bin/cleanup_satdump_old.sh
