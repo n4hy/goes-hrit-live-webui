@@ -1,220 +1,217 @@
-# SatDump GOES-19 HRIT (RTL-SDR) – Live Decoder + Full Disk Web Publisher + Auto-Cleanup
+# GOES-19 Live Full-Disk Web UI (RaspiNOAA + SatDump)
 
-This release captures a working, *operational* Raspberry Pi workflow for:
-1) running SatDump `live goes_hrit` from an RTL-SDR to decode GOES-19 HRIT/LRIT products,
-2) publishing the **latest Full Disk** images to a simple web directory (`/var/www/goes`) with `meta.json`,
-3) automatically deleting SatDump output older than a configurable retention window (`TOOOLD_DAYS`) stored in `/etc/satdump_cleanup.conf`.
+## Purpose
+This document describes, **step by step**, how to build a reliable, live-updating
+GOES-19 Full Disk web interface on a Raspberry Pi running RaspiNOAA with SatDump.
+Nothing here is optional. Nothing is implied. Every step exists because something
+breaks if it is skipped.
 
-It is designed for “drop in and run” on a Pi, with **systemd services + timers**, and an interactive installer that prompts for each step.
-
----
-
-## What you get
-
-### Services / timers
-- `satdump-goes19.service`  
-  Runs SatDump continuously:
-  ```
-  satdump live goes_hrit GOES-19 --source rtlsdr --frequency ... --samplerate ... --gain ... --fill_missing --output-directory ...
-  ```
-
-- `update-goes-fd-web.service` + `update-goes-fd-web.timer`  
-  Periodically finds the newest Full Disk directory that contains an **anchor file** (default: `product.cbor`) and copies a small set of “latest_*.png” images into `/var/www/goes/`, plus writes `/var/www/goes/meta.json`.
-
-- `satdump-cleanup.service` + `satdump-cleanup.timer`  
-  Daily cleanup of SatDump output older than `TOOOLD_DAYS` (default: 7) under the data root (default: `/home/pi/sat`), logging to `/var/log/satdump_cleanup.log`.
-
-### Scripts
-Drop these into the repository `scripts/` directory (exact content included in this release):
-- `install_wizard.sh` – interactive setup script (recommended)
-- `run_satdump_goes19.sh` – wrapper for the SatDump `live goes_hrit` command
-- `update_goes_fd_web.sh` – publish latest Full Disk images for web UI
-- `cleanup_satdump_old.sh` – delete output older than `TOOOLD_DAYS`, with logging
-
-### Configuration
-- `/etc/satdump_cleanup.conf`  
-  Example:
-  ```
-  TOOOLD_DAYS=7
-  ROOT=/home/pi/sat
-  ```
-- `/etc/goes_fd_views.conf`  
-  Maps “latest_*” names to filenames to copy from the newest Full Disk directory. Example:
-  ```
-  latest_false_color.png=abi_rgb_GEO_False_Color.png
-  latest_clean_ir.png=abi_rgb_Clean_Longwave_IR_Window_Band.png
-  latest_longwave_ir.png=abi_rgb_Infrared_Longwave_Window_Band.png
-  latest_wv_upper.png=abi_rgb_Upper-Level_Tropospheric_Water_Vapor.png
-  ```
+This system:
+- Receives GOES-19 HRIT via SatDump
+- Publishes *only Full Disk ABI products*
+- Mirrors the newest Full Disk directory to a web root
+- Pushes **real-time browser refresh** using Server-Sent Events (SSE)
+- Does **not** interfere with RaspiNOAA’s existing LEO tracking UI
 
 ---
 
-## Web address for the images
-
-This setup assumes a web server is already serving `/var/www/goes` on port **8080** (as you were using `curl http://localhost:8080/meta.json`).
-
-Once the publisher runs at least once, you should be able to fetch:
-
-- `http://<PI_HOST>:8080/meta.json`
-- `http://<PI_HOST>:8080/latest_false_color.png`
-- `http://<PI_HOST>:8080/latest_clean_ir.png`
-- `http://<PI_HOST>:8080/latest_longwave_ir.png`
-- `http://<PI_HOST>:8080/latest_wv_upper.png`
-
-If you have a different web server/port, adjust the server config—not these scripts. The publisher always writes into `/var/www/goes`.
+## Assumptions (Non‑Negotiable)
+- Raspberry Pi OS (Bookworm)
+- RaspiNOAA already installed and running
+- SatDump built and working
+- RTL‑SDR working at 1.6941 GHz
+- You are comfortable with `systemctl`, `nginx`, and shell scripts
 
 ---
 
-## Installation (recommended: interactive wizard)
+## Filesystem Layout (Authoritative)
+SatDump output **must** look like this:
 
-### 0) Put the scripts in place
-From the repository root:
-```bash
-sudo install -d -m 0755 /usr/local/bin
-sudo install -m 0755 scripts/*.sh /usr/local/bin/
+```
+/home/pi/sat/GOES-19/IMAGES/GOES-19/Full Disk/
+ ├── YYYY-MM-DD_HH-MM-SS/
+ │   ├── G19_*_YYYYMMDDTHHMMSSZ.png
+ │   ├── product.cbor
 ```
 
-### 1) Run the wizard
-```bash
-sudo /usr/local/bin/install_wizard.sh
-```
-
-The wizard will:
-- confirm SatDump binary path,
-- confirm output root directory,
-- create `/etc/satdump_cleanup.conf`,
-- create `/etc/goes_fd_views.conf` (if missing),
-- install systemd unit files,
-- enable and start services/timers.
+If this layout is wrong, nothing downstream will work.
 
 ---
 
-## Manual installation (if you prefer)
+## SatDump Service (GOES‑19 HRIT)
 
-### 1) Install scripts
-```bash
-sudo install -d -m 0755 /usr/local/bin
-sudo install -m 0755 scripts/run_satdump_goes19.sh /usr/local/bin/
-sudo install -m 0755 scripts/update_goes_fd_web.sh    /usr/local/bin/
-sudo install -m 0755 scripts/cleanup_satdump_old.sh   /usr/local/bin/
+### Systemd service
+```
+/etc/systemd/system/satdump-goes19.service
 ```
 
-### 2) Create cleanup retention config
-```bash
-sudo tee /etc/satdump_cleanup.conf >/dev/null <<'EOF'
-# Days to retain SatDump data
-TOOOLD_DAYS=7
-# Root of SatDump output (directory that contains goes19/, etc.)
-ROOT=/home/pi/sat
+ExecStart **must** include:
+```
+--fill_missing
+--output-directory /home/pi/sat
+```
+
+Restart and verify:
+```
+systemctl restart satdump-goes19
+systemctl is-active satdump-goes19
+```
+
+### USB Stability (Critical)
+SatDump **will silently stall** unless usbfs memory is disabled:
+
+```
+echo 0 | sudo tee /sys/module/usbcore/parameters/usbfs_memory_mb
+```
+
+Make this persistent via `/etc/rc.local` or a systemd unit.
+
+---
+
+## Web Publish Script
+
+### Script Location
+```
+/usr/local/bin/update_goes_fd_web.sh
+```
+
+### Script (Minimal, Correct)
+```
+#!/bin/bash
+set -euo pipefail
+
+SATDUMP_FD_ROOT="/home/pi/sat/GOES-19/IMAGES/GOES-19/Full Disk"
+WEB_ROOT="/var/www/goes"
+
+LATEST_DIR="$(ls -1 "$SATDUMP_FD_ROOT" | sort -r | head -n 1)"
+SRC="$SATDUMP_FD_ROOT/$LATEST_DIR"
+
+mkdir -p "$WEB_ROOT/current"
+rm -f "$WEB_ROOT/current/"*
+cp -f "$SRC"/* "$WEB_ROOT/current/"
+
+cat > "$WEB_ROOT/meta.json" <<EOF
+{
+  "timestamp_dir": "$LATEST_DIR",
+  "updated_utc": "$(date -u +%FT%TZ)"
+}
 EOF
-sudo chmod 0644 /etc/satdump_cleanup.conf
+
+touch "$WEB_ROOT/.trigger"
 ```
 
-### 3) Create Full Disk view map (what to publish as latest_*.png)
-```bash
-sudo tee /etc/goes_fd_views.conf >/dev/null <<'EOF'
-latest_false_color.png=abi_rgb_GEO_False_Color.png
-latest_clean_ir.png=abi_rgb_Clean_Longwave_IR_Window_Band.png
-latest_longwave_ir.png=abi_rgb_Infrared_Longwave_Window_Band.png
-latest_wv_upper.png=abi_rgb_Upper-Level_Tropospheric_Water_Vapor.png
-EOF
-sudo chmod 0644 /etc/goes_fd_views.conf
+Permissions:
 ```
-
-### 4) Install systemd unit files
-Copy the unit files from `systemd/` in this release:
-```bash
-sudo install -d -m 0755 /etc/systemd/system
-sudo install -m 0644 systemd/satdump-goes19.service        /etc/systemd/system/
-sudo install -m 0644 systemd/update-goes-fd-web.service    /etc/systemd/system/
-sudo install -m 0644 systemd/update-goes-fd-web.timer      /etc/systemd/system/
-sudo install -m 0644 systemd/satdump-cleanup.service       /etc/systemd/system/
-sudo install -m 0644 systemd/satdump-cleanup.timer         /etc/systemd/system/
-sudo systemctl daemon-reload
-```
-
-### 5) Enable/Start
-```bash
-sudo systemctl enable --now satdump-goes19.service
-sudo systemctl enable --now update-goes-fd-web.timer
-sudo systemctl enable --now satdump-cleanup.timer
+chmod +x /usr/local/bin/update_goes_fd_web.sh
 ```
 
 ---
 
-## Operations
+## Systemd Timer
 
-### Check SatDump is running
-```bash
-systemctl status satdump-goes19.service --no-pager
-sudo tr '\0' ' ' < /proc/$(systemctl show -p MainPID --value satdump-goes19.service)/cmdline ; echo
+### Service
+```
+/etc/systemd/system/update-goes-fd-web.service
+```
+```
+[Service]
+Type=oneshot
+ExecStart=/usr/local/bin/update_goes_fd_web.sh
 ```
 
-### Publish “latest Full Disk” immediately (one-shot)
-```bash
-sudo systemctl start update-goes-fd-web.service
-cat /var/www/goes/meta.json
-ls -l /var/www/goes/latest_*.png
+### Timer
+```
+/etc/systemd/system/update-goes-fd-web.timer
+```
+```
+[Timer]
+OnBootSec=60
+OnUnitActiveSec=60
 ```
 
-### Cleanup immediately (one-shot)
-```bash
-sudo systemctl start satdump-cleanup.service
-tail -n 200 /var/log/satdump_cleanup.log
+Enable:
 ```
-
-### Change retention window
-Edit `/etc/satdump_cleanup.conf`:
-```bash
-sudo nano /etc/satdump_cleanup.conf
-```
-Then run a one-shot cleanup to verify:
-```bash
-sudo systemctl start satdump-cleanup.service
-tail -n 200 /var/log/satdump_cleanup.log
+systemctl enable --now update-goes-fd-web.timer
 ```
 
 ---
 
-## Safety notes (read once)
+## nginx (DO NOT BREAK RaspiNOAA)
 
-- `satdump-cleanup` **deletes directories** under the configured `ROOT`. It only deletes timestamped directories that match SatDump naming patterns and are older than `TOOOLD_DAYS`. Still: double-check `ROOT` before enabling the timer.
-- All scripts use `set -euo pipefail` and write explicit logs to reduce silent failures.
+### Dedicated GOES site
+```
+/etc/nginx/sites-available/goes
+```
+
+```
+server {
+  listen 8080;
+  root /var/www/goes;
+  index index.html;
+
+  location /goes/current/ {
+    alias /var/www/goes/current/;
+    autoindex on;
+    add_header Cache-Control "no-store";
+  }
+
+  location /goes/events {
+    default_type text/event-stream;
+    add_header Cache-Control no-cache;
+    add_header Connection keep-alive;
+    chunked_transfer_encoding on;
+  }
+}
+```
+
+Enable:
+```
+ln -s /etc/nginx/sites-available/goes /etc/nginx/sites-enabled/goes
+nginx -t && systemctl reload nginx
+```
 
 ---
 
-## Troubleshooting quick hits
+## Server‑Sent Events (SSE)
 
-### “Input file rtlsdr does not exist!”
-That error occurs when SatDump is invoked in a non-`live` mode expecting an input file path. For live RTL-SDR decoding you must use:
+A lightweight Python watcher monitors `.trigger` and emits updates.
+
 ```
-satdump live goes_hrit GOES-19 --source rtlsdr ...
+python3 sse_watch.py
 ```
 
-### Publisher picks “old” Full Disk
-The publisher chooses the newest directory containing `ANCHOR` (default `product.cbor`). If your Full Disk directories are missing the expected anchor, set:
-```
-ANCHOR=product.cbor
-```
-in `update_goes_fd_web.sh` (already default in this release).
+This **must** be running or the browser will not auto-refresh.
 
 ---
 
-## File layout in this release
+## Browser UI Behavior
 
-```
-.
-├── README.md
-├── README.pdf
-├── scripts/
-│   ├── install_wizard.sh
-│   ├── run_satdump_goes19.sh
-│   ├── update_goes_fd_web.sh
-│   └── cleanup_satdump_old.sh
-└── systemd/
-    ├── satdump-goes19.service
-    ├── update-goes-fd-web.service
-    ├── update-goes-fd-web.timer
-    ├── satdump-cleanup.service
-    └── satdump-cleanup.timer
-```
+- Page loads newest image
+- Dropdown lists all images in `/current`
+- New image arrival:
+  - Script updates `.trigger`
+  - SSE emits event
+  - Browser reloads image and steals focus
+- Footer shows UTC timestamp parsed from filename
+
+---
+
+## Known Failure Modes (Read This)
+| Symptom | Cause | Fix |
+|------|-----|----|
+| Images frozen | usbfs buffer | set usbfs_memory_mb=0 |
+| JSON updates but images don’t | Wrong SATDUMP_FD_ROOT | fix path |
+| SSE connects, no updates | `.trigger` not touched | fix script |
+| RaspiNOAA broken | You edited port 80 | undo it |
+
+---
+
+## Philosophy
+This system exists because static pages are useless for live satellites.
+If it stops updating, something **upstream** is broken.
+Do not debug the web UI first.
+
+---
+
+## License
+Public domain. Share it. Improve it. Do not simplify it.

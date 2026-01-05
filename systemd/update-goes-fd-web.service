@@ -1,8 +1,7 @@
 [Unit]
-Description=Publish latest GOES-19 Full Disk images for web UI
+Description=Publish latest GOES Full Disk images for web UI
+After=network.target
 
 [Service]
 Type=oneshot
-User=root
-Group=root
-ExecStart=/usr/local/bin/update_goes_fd_web.sh
+ExecStart=/usr/local/bin/update_goes_multi_web.sh

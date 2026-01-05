@@ -1,10 +1,11 @@
 [Unit]
-Description=Run GOES-19 Full Disk web publisher periodically
+Description=Run GOES Full Disk web publisher periodically
 
 [Timer]
-OnBootSec=90
-OnUnitActiveSec=60
-Persistent=true
+OnBootSec=30s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=update-goes-fd-web.service
 
 [Install]
 WantedBy=timers.target
