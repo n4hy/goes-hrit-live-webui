@@ -1,430 +1,369 @@
-# GOES‑19 Full Disk Web Publisher
+# GOES HRIT Live Web UI
 
-**A deterministic, self‑healing, production‑grade pipeline for ingesting GOES‑19 HRIT Full Disk imagery and publishing stable, continuously updating web endpoints.**
+**A production-grade pipeline for ingesting GOES-18/19 HRIT Full Disk imagery and publishing real-time web endpoints with timelapse generation.**
 
 This repository contains everything required to:
 
-• Ingest GOES‑19 HRIT (High Rate Information Transmission)
-• Decode ABI imagery
-• Select only **complete Full Disk frames**
-• Enforce data‑settling guarantees (no partial files)
-• Publish stable web endpoints (`latest_*.png`)
-• Serve via nginx
-• Auto‑heal via systemd watchdog
-• Provide deterministic updates
-• Provide a clean web UI
+- Ingest GOES-18 and GOES-19 HRIT (High Rate Information Transmission)
+- Decode ABI imagery via SatDump
+- Select only **complete Full Disk frames**
+- Publish real-time web endpoints with Server-Sent Events (SSE)
+- Generate animated timelapse GIFs on demand
+- Serve via nginx with zero-cache guarantees
+- Provide an interactive web UI with Live and Timelapse modes
 
-This is not a demo system — it is designed as **infrastructure**.
+This is not a demo system - it is designed as **infrastructure**.
 
 ---
 
-# System Architecture
+## System Architecture
 
 ```
-GOES‑19 HRIT RF
-        ↓
+GOES-18/19 HRIT RF
+        |
 SDR + LNA + Filter + Dish
-        ↓
+        |
 SatDump HRIT Decoder
-        ↓
+        |
 Filesystem (timestamped frames)
-        ↓
-update_goes_fd_web.sh (publisher)
-        ↓
-/var/www/goes
-        ↓
-nginx
-        ↓
-Web UI + stable endpoints
+   /home/pi/sat/GOES-{18,19}/IMAGES/GOES-{18,19}/Full Disk/
+        |
+update_goes_multi_web.sh (publisher)
+        |
+/var/www/goes/current/{GOES-18,GOES-19}/
+        |
+goes_sse_watch.py (SSE server + timelapse API)
+        |
+nginx (port 8080)
+        |
+Web UI (Live + Timelapse modes)
 ```
 
 ---
 
-# Core Design Principles
+## Features
 
-## 1) Determinism
-Only complete datasets are published.
-Partial frames are never visible.
+### Live Mode
+- Real-time satellite image display
+- Satellite selector (GOES-18 / GOES-19)
+- Image/band selector
+- Auto-refresh via Server-Sent Events
+- No browser caching
 
-## 2) Stability
-Stable URLs:
-
-```
-/latest_false_color.png
-/latest_clean_ir.png
-/latest_longwave_ir.png
-/latest_wv_upper.png
-/meta.json
-```
-
-These never change names — only content.
-
-## 3) Temporal Safety
-Files must be **settled** before publication:
-
-```bash
-SETTLE_SECONDS=90
-```
-
-This prevents race conditions while SatDump is still writing.
-
-## 4) Idempotence
-Publisher can run repeatedly without corruption.
-
-## 5) Self‑Healing
-A watchdog monitors freshness and automatically recovers.
+### Timelapse Mode
+- On-demand animated GIF generation
+- Configurable band selection (CH2, CH7, CH8, CH13)
+- Configurable time window (3h, 6h, 12h, 24h)
+- Configurable frame count (12, 24, 36, 48)
+- Metadata display (frame count, generation time)
 
 ---
 
-# Disk Layout
+## Disk Layout
 
-## SatDump Output
+### SatDump Output
 
 ```
 /home/pi/sat/GOES-19/IMAGES/GOES-19/Full Disk/
-    2026-01-04_19-00-22/
-        G19_2_*.png   (CH2 Visible)
-        G19_7_*.png   (CH7 Clean IR / Shortwave IR)
-        G19_8_*.png   (CH8 Upper Water Vapor)
-        G19_13_*.png  (CH13 Longwave IR)
+    2026-01-25_15-30-21/
+        G19_2_20260125T153021Z.png   (CH2 Visible)
+        G19_7_20260125T153021Z.png   (CH7 Clean IR)
+        G19_8_20260125T153021Z.png   (CH8 Water Vapor)
+        G19_13_20260125T153021Z.png  (CH13 Longwave IR)
+        product.cbor
 ```
 
 Each directory = one Full Disk frame timestamp.
 
----
-
-## Web Root
+### Web Root
 
 ```
 /var/www/goes/
     index.html
+    style.css
+    app.js
     meta.json
-    latest_false_color.png
-    latest_clean_ir.png
-    latest_longwave_ir.png
-    latest_wv_upper.png
+    meta_GOES-18.json
+    meta_GOES-19.json
     current/
+        GOES-18/
+        GOES-19/
+    timelapse/
+        GOES-19_B13_6h.gif
+        GOES-19_B13_6h.json
 ```
 
 ---
 
-# Channel Mapping
+## Channel Mapping
 
-| ABI Band | Meaning | Web Output |
-|------|------|------|
-| CH2 | Visible | latest_false_color.png |
-| CH7 | Shortwave IR | latest_clean_ir.png |
-| CH8 | Upper Water Vapor | latest_wv_upper.png |
-| CH13 | Longwave IR | latest_longwave_ir.png |
-
----
-
-# Publisher Logic
-
-File:  
-```
-/usr/local/bin/update_goes_fd_web.sh
-```
-
-## Selection Algorithm
-
-1. Sort timestamp directories (newest first)
-2. For each directory:
-   - Must contain CH2, CH7, CH8, CH13
-   - Files must be older than `SETTLE_SECONDS`
-3. First directory that passes → selected
-
-This guarantees:
-• No partial frames
-• No torn writes
-• No mixed timestamps
+| ABI Band | Wavelength | Description |
+|----------|------------|-------------|
+| CH2 | 0.64 um | Visible (Red) |
+| CH7 | 3.9 um | Shortwave IR / Clean IR |
+| CH8 | 6.2 um | Upper-level Water Vapor |
+| CH13 | 10.3 um | Longwave IR (Clean Window) |
 
 ---
 
-## Publication Actions
+## Components
 
-```
-/meta.json                 ← timestamp + UTC update time
-/latest_false_color.png    ← CH2
-/latest_clean_ir.png       ← CH7
-/latest_longwave_ir.png    ← CH13
-/latest_wv_upper.png       ← CH8
-```
+### Scripts
 
-Ownership:
-```
-www-data:www-data
-```
+| File | Purpose |
+|------|---------|
+| `update_goes_multi_web.sh` | Publishes latest frames for all satellites |
+| `goes_sse_watch.py` | SSE server + timelapse API (port 8090) |
+| `make_timelapse_gif.sh` | Generates animated GIF timelapses |
+| `make_timelapse.sh` | Generates MP4 timelapse videos |
+| `cleanup_satdump_old.sh` | Removes old SatDump data |
 
----
+### systemd Units
 
-# meta.json Format
+| File | Purpose |
+|------|---------|
+| `update-goes-fd-web.service` | Publisher service |
+| `update-goes-fd-web.timer` | Runs publisher every minute |
+| `goes-sse.service` | SSE server daemon |
+| `satdump-cleanup.service` | Cleanup service |
+| `satdump-cleanup.timer` | Cleanup timer |
+| `satdump-goes19.service` | SatDump decoder service |
 
-```json
-{
-  "timestamp_dir": "2026-01-04_19-30-22",
-  "updated_utc": "2026-01-04T20:00:42Z"
-}
-```
+### Web Files
 
-This provides:
-• determinism
-• observability
-• automation hooks
-• validation
+| File | Purpose |
+|------|---------|
+| `index.html` | Main page structure |
+| `style.css` | Dark theme styling |
+| `app.js` | Live/Timelapse logic + SSE handling |
 
----
+### nginx
 
-# nginx Configuration
-
-## Primary Server
-
-```
-listen 8080;
-root /var/www/goes;
-```
-
-## Alias Compatibility
-
-```
-/goes/  → /var/www/goes/
-```
-
-This allows both:
-```
-/meta.json
-/goes/meta.json
-```
+| File | Purpose |
+|------|---------|
+| `goes-hrit-live.conf` | Server config (port 8080) |
 
 ---
 
-# Web UI
+## nginx Endpoints
 
-Features:
+| Path | Description |
+|------|-------------|
+| `/` | Web UI |
+| `/goes/` | Web UI (alias) |
+| `/current/{SAT}/` | Latest images per satellite |
+| `/timelapse/` | Generated timelapse GIFs |
+| `/events` | SSE stream for live updates |
+| `/api/timelapse` | POST endpoint for GIF generation |
 
-• Stable image endpoints
-• No caching
-• Auto refresh
-• Deterministic refresh
-• Labeled channels
-• Single‑page interface
-
-Captions:
-
-• CH2 (Visible) — False color proxy
-• CH7 — Clean IR (3.9 µm)
-• CH13 — Longwave IR (10.3 µm)
-• CH8 — Upper‑level water vapor
+All paths work with or without `/goes/` prefix.
 
 ---
 
-# Timers
+## Installation
 
-## Publisher Timer
+### Prerequisites
 
-```
-update-goes-fd-web.timer
-```
+- Raspberry Pi (tested on RPi5)
+- SatDump configured for GOES HRIT
+- SDR hardware + dish pointed at GOES
 
-Runs publisher automatically.
+### Quick Install
 
----
-
-## Watchdog Timer
-
-```
-goes-web-watchdog.timer
+1. Clone this repo to the Pi:
+```bash
+git clone <repo-url> ~/goes-hrit-live-webui
+cd ~/goes-hrit-live-webui
 ```
 
-Functions:
-
-• Detect stale data
-• Verify file ages
-• Verify meta freshness
-• Restart SatDump if needed
-• Re‑publish if needed
-• Prevent restart storms
-• Enforce cooldowns
-
----
-
-# Watchdog Behavior Model
-
-```
-FRESH → do nothing
-STALE → publish
-STALE x N → restart SatDump
-COOLDOWN → wait
-RECOVER → reset counters
+2. Run the installer (as root):
+```bash
+sudo bash install/install.sh
 ```
 
-This is a **finite‑state recovery machine**, not a cron script.
+This installs:
+- nginx and ffmpeg packages
+- Web UI to `/var/www/goes/`
+- Scripts to `/usr/local/bin/`
+- systemd units to `/etc/systemd/system/`
+- nginx config to `/etc/nginx/sites-available/`
 
----
-
-# Why This Is Stable
-
-• No filename mutation
-• No directory races
-• No partial visibility
-• No dependency on SatDump timing
-• No UI race conditions
-• No HTTP caching
-• No symbolic links
-• No symlink flips
-• No file renames
-
-Only atomic copy + overwrite.
-
----
-
-# Operational Model
-
-**Deterministic until it fails, then adaptive.**
-
-Normal mode:
-• Deterministic publish cycle
-
-Failure mode:
-• Detection
-• Isolation
-• Recovery
-• Stabilization
-• Resume
-
----
-
-# What This System Is
-
-• Infrastructure
-• Data pipeline
-• Deterministic publishing system
-• Observability platform
-• Real‑time geophysical data service
-
----
-
-# What This System Is Not
-
-• Demo script
-• Hobby pipeline
-• "best effort" system
-• fire‑and‑forget cron job
-
----
-
-# Future‑Proofing
-
-Designed to support:
-
-• Mesoscale sectors
-• Multi‑sat relay
-• GOES‑West integration
-• Himawari relay
-• EMWIN ingestion
-• DCS ingestion
-• Multi‑product compositing
-• AI segmentation
-• Temporal differencing
-• Change detection
-• Motion vectors
-• Event detection
-
----
-
-# Installation Flow (Novice‑Friendly)
-
-1) Install SatDump
-2) Configure HRIT for GOES‑19
-3) Set output directory:
-
+3. Open browser:
 ```
-/home/pi/sat/GOES-19/IMAGES/GOES-19/Full Disk
+http://<pi-ip>:8080/
 ```
 
-4) Install nginx
+### Manual Installation
 
-5) Deploy repo files:
-
-```
-/usr/local/bin/update_goes_fd_web.sh
-/etc/systemd/system/update-goes-fd-web.service
-/etc/systemd/system/update-goes-fd-web.timer
-/etc/systemd/system/goes-web-watchdog.service
-/etc/systemd/system/goes-web-watchdog.timer
-/var/www/goes/
+1. Install packages:
+```bash
+sudo apt-get install -y nginx python3 ffmpeg
 ```
 
-6) Enable timers:
-
-```
-systemctl daemon-reload
-systemctl enable --now update-goes-fd-web.timer
-tystemctl enable --now goes-web-watchdog.timer
+2. Create web root:
+```bash
+sudo mkdir -p /var/www/goes/{current,timelapse}
+sudo chown -R www-data:www-data /var/www/goes
 ```
 
-7) Open browser:
-
+3. Copy files:
+```bash
+sudo cp web/* /var/www/goes/
+sudo cp scripts/*.sh /usr/local/bin/
+sudo cp scripts/*.py /usr/local/bin/
+sudo chmod +x /usr/local/bin/*.sh /usr/local/bin/*.py
+sudo cp systemd/* /etc/systemd/system/
+sudo cp nginx/goes-hrit-live.conf /etc/nginx/sites-available/
+sudo ln -sf /etc/nginx/sites-available/goes-hrit-live /etc/nginx/sites-enabled/
 ```
-http://<host>:8080/
+
+4. Enable services:
+```bash
+sudo systemctl daemon-reload
+sudo nginx -t && sudo systemctl reload nginx
+sudo systemctl enable --now goes-sse.service
+sudo systemctl enable --now update-goes-fd-web.timer
 ```
 
 ---
 
-# Philosophy
+## Configuration
 
-This system is built on:
+### Satellite Paths
 
-• Deterministic state machines
-• Observable invariants
-• Controlled mutation
-• Stable interfaces
-• Fault isolation
-• Minimal coupling
-• Predictable behavior
+Edit `scripts/update_goes_multi_web.sh` to add/modify satellite paths:
 
-This is how infrastructure is built — not scripts.
+```bash
+CANDIDATES=(
+  "GOES-18:/home/pi/sat/GOES-18/IMAGES/GOES-18/Full Disk"
+  "GOES-19:/home/pi/sat/GOES-19/IMAGES/GOES-19/Full Disk"
+)
+```
 
----
+### Timelapse Paths
 
-# Status
+Edit `scripts/make_timelapse_gif.sh` to change the source path:
 
-**Operational**
-
-• Continuous publishing
-• Stable endpoints
-• Deterministic behavior
-• Self‑healing
-• Full Disk only
-• No partial frames
-• Labeled channels
-• Production stability
+```bash
+ROOT="/home/pi/sat/${SAT}/IMAGES/${SAT}/Full Disk"
+```
 
 ---
 
-# Author’s Note
+## Monitoring
 
-This system intentionally prioritizes:
+### Service Status
+```bash
+systemctl status goes-sse.service
+systemctl status update-goes-fd-web.timer
+```
 
-• correctness over speed
-• determinism over novelty
-• stability over features
-• invariants over convenience
-• architecture over hacks
+### Logs
+```bash
+# Publisher logs
+journalctl -u update-goes-fd-web.service -f
 
-Because once it’s stable — everything else becomes easy.
+# SSE server logs
+journalctl -u goes-sse.service -f
+```
+
+### Timer Status
+```bash
+systemctl list-timers update-goes-fd-web.timer
+```
+
+### Verify Updates
+```bash
+cat /var/www/goes/meta.json
+watch -n 10 cat /var/www/goes/meta.json
+```
 
 ---
 
-# License
+## Troubleshooting
 
-Public repository.  
-Open architecture.  
+### Images not updating
+1. Check if publisher is running: `systemctl status update-goes-fd-web.timer`
+2. Check for images: `ls "/home/pi/sat/GOES-19/IMAGES/GOES-19/Full Disk/" | tail -5`
+3. Check logs: `journalctl -u update-goes-fd-web.service -n 50`
+
+### SSE not connecting
+1. Check SSE server: `sudo ss -tlnp | grep 8090`
+2. Test endpoint: `curl -N http://localhost:8080/events`
+3. Check nginx config: `sudo nginx -t`
+
+### Timelapse generation fails
+1. Test manually: `sudo /usr/local/bin/make_timelapse_gif.sh GOES-19 13 6 24`
+2. Check ffmpeg: `which ffmpeg`
+3. Check permissions: `ls -la /var/www/goes/timelapse/`
+
+---
+
+## Design Principles
+
+### Determinism
+Only complete datasets are published. Partial frames are never visible.
+
+### Stability
+Stable URLs that never change names - only content.
+
+### Idempotence
+Publisher can run repeatedly without corruption.
+
+### Zero Caching
+All endpoints return `Cache-Control: no-store` headers.
+
+### Real-time Updates
+SSE push notifications eliminate polling overhead.
+
+---
+
+## File Structure
+
+```
+goes-hrit-live-webui/
+    install/
+        install.sh          # Main installer
+        uninstall.sh        # Cleanup script
+        check.sh            # Verification script
+    scripts/
+        update_goes_multi_web.sh
+        goes_sse_watch.py
+        make_timelapse_gif.sh
+        make_timelapse.sh
+        cleanup_satdump_old.sh
+        build_mosaic.py
+        install_wizard.sh
+        run_satdump_goes19.sh
+    systemd/
+        goes-sse.service
+        update-goes-fd-web.service
+        update-goes-fd-web.timer
+        satdump-cleanup.service
+        satdump-cleanup.timer
+        satdump-goes19.service
+    nginx/
+        goes-hrit-live.conf
+    web/
+        index.html
+        style.css
+        app.js
+    docs/
+        SECURITY.md
+    README.md
+    LICENSE
+```
+
+---
+
+## License
+
+Public repository.
+Open architecture.
 Free use for research, education, and infrastructure.
 
 ---
 
-**GOES‑19 Full Disk Web Publisher**
+**GOES HRIT Live Web UI**
 
 Built as infrastructure, not a project.
-

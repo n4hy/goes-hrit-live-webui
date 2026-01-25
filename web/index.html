@@ -12,6 +12,38 @@
     <select id="satsel"></select>
     <label>Image:</label>
     <select id="imgsel"></select>
+    <span class="separator"></span>
+    <label>Mode:</label>
+    <select id="modesel">
+      <option value="live">Live</option>
+      <option value="timelapse">Timelapse</option>
+    </select>
+  </div>
+
+  <div id="timelapse-controls" style="display:none;">
+    <label>Band:</label>
+    <select id="bandsel">
+      <option value="2">CH2 (Visible)</option>
+      <option value="7">CH7 (Clean IR)</option>
+      <option value="8">CH8 (Water Vapor)</option>
+      <option value="13" selected>CH13 (Longwave IR)</option>
+    </select>
+    <label>Duration:</label>
+    <select id="durationsel">
+      <option value="3">3 hours</option>
+      <option value="6" selected>6 hours</option>
+      <option value="12">12 hours</option>
+      <option value="24">24 hours</option>
+    </select>
+    <label>Frames:</label>
+    <select id="framesel">
+      <option value="12">12</option>
+      <option value="24" selected>24</option>
+      <option value="36">36</option>
+      <option value="48">48</option>
+    </select>
+    <button id="generatebtn">Generate GIF</button>
+    <span id="gifstatus"></span>
   </div>
 
   <div id="viewer">
