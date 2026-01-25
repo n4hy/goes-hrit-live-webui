@@ -249,12 +249,11 @@ def main():
         meta_path = OUT_DIR / out_name.replace(".png", ".json")
         meta_path.write_text(json.dumps(meta, indent=2))
 
+        # Ensure group write permission for www-data
         try:
-            import pwd
             import os
-            www_data = pwd.getpwnam("www-data")
-            os.chown(out_path, www_data.pw_uid, www_data.pw_gid)
-            os.chown(meta_path, www_data.pw_uid, www_data.pw_gid)
+            os.chmod(out_path, 0o664)
+            os.chmod(meta_path, 0o664)
         except:
             pass
 

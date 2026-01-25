@@ -15,8 +15,9 @@ echo "[3/9] Web root..."
 mkdir -p /var/www/goes/current
 mkdir -p /var/www/goes/timelapse
 mkdir -p /var/www/goes/falsecolor
-chown -R www-data:www-data /var/www/goes
-chmod -R 755 /var/www/goes
+# Allow both pi (SSE service) and www-data (nginx) to access
+chown -R pi:www-data /var/www/goes
+chmod -R 775 /var/www/goes
 
 echo "[4/9] Web UI files..."
 install -m 0644 web/index.html /var/www/goes/index.html
@@ -48,8 +49,10 @@ systemctl enable --now goes-sse.service
 systemctl enable --now update-goes-fd-web.timer
 
 echo "[9/9] Set permissions..."
-chown -R www-data:www-data /var/www/goes/timelapse
-chown -R www-data:www-data /var/www/goes/falsecolor
+chown -R pi:www-data /var/www/goes/timelapse
+chown -R pi:www-data /var/www/goes/falsecolor
+chmod -R 775 /var/www/goes/timelapse
+chmod -R 775 /var/www/goes/falsecolor
 
 echo ""
 echo "Done. Services running:"

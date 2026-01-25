@@ -79,6 +79,7 @@ cat > "$OUTROOT/${SAT}_B${BAND}_${HOURS}h.json" <<EOF
 }
 EOF
 
-chown www-data:www-data "$OUTFILE" "$OUTROOT/${SAT}_B${BAND}_${HOURS}h.json" 2>/dev/null || true
+# Ensure group write permission for www-data
+chmod 664 "$OUTFILE" "$OUTROOT/${SAT}_B${BAND}_${HOURS}h.json" 2>/dev/null || true
 
 echo "Generated: $OUTFILE ($FRAME_COUNT frames)"
