@@ -10,7 +10,8 @@ This repository contains everything required to:
 - Publish real-time web endpoints with Server-Sent Events (SSE)
 - Generate animated timelapse GIFs on demand
 - Serve via nginx with zero-cache guarantees
-- Provide an interactive web UI with Live and Timelapse modes
+- Generate false color composites from multiple bands
+- Provide an interactive web UI with Live, Timelapse, and False Color modes
 
 This is not a demo system - it is designed as **infrastructure**.
 
@@ -32,11 +33,11 @@ update_goes_multi_web.sh (publisher)
         |
 /var/www/goes/current/{GOES-18,GOES-19}/
         |
-goes_sse_watch.py (SSE server + timelapse API)
+goes_sse_watch.py (SSE server + timelapse/falsecolor API)
         |
 nginx (port 8080)
         |
-Web UI (Live + Timelapse modes)
+Web UI (Live + Timelapse + False Color modes)
 ```
 
 ---
@@ -56,6 +57,16 @@ Web UI (Live + Timelapse modes)
 - Configurable time window (3h, 6h, 12h, 24h)
 - Configurable frame count (12, 24, 36, 48)
 - Metadata display (frame count, generation time)
+
+### False Color Mode
+- On-demand false color composite generation
+- Five preset algorithms:
+  - **Day/Night** - Visible by day, IR by night (GeoColor-style)
+  - **Fire/Hot Spot** - CH7 shortwave IR highlights fires and hot spots
+  - **Vegetation** - Enhanced vegetation visibility
+  - **Sandwich RGB** - Visible + IR blend for cloud texture
+  - **Custom RGB** - User-selectable R/G/B band assignments
+- Custom mode allows any combination of CH2, CH7, CH8, CH13, CH14
 
 ---
 
@@ -91,6 +102,10 @@ Each directory = one Full Disk frame timestamp.
     timelapse/
         GOES-19_B13_6h.gif
         GOES-19_B13_6h.json
+    falsecolor/
+        GOES-19_daynight.png
+        GOES-19_fire.png
+        GOES-19_custom_R2_G7_B13.png
 ```
 
 ---
@@ -113,9 +128,10 @@ Each directory = one Full Disk frame timestamp.
 | File | Purpose |
 |------|---------|
 | `update_goes_multi_web.sh` | Publishes latest frames for all satellites |
-| `goes_sse_watch.py` | SSE server + timelapse API (port 8090) |
+| `goes_sse_watch.py` | SSE server + timelapse/falsecolor API (port 8090) |
 | `make_timelapse_gif.sh` | Generates animated GIF timelapses |
 | `make_timelapse.sh` | Generates MP4 timelapse videos |
+| `make_false_color.py` | Generates false color composite images |
 | `cleanup_satdump_old.sh` | Removes old SatDump data |
 
 ### systemd Units
@@ -153,8 +169,10 @@ Each directory = one Full Disk frame timestamp.
 | `/goes/` | Web UI (alias) |
 | `/current/{SAT}/` | Latest images per satellite |
 | `/timelapse/` | Generated timelapse GIFs |
+| `/falsecolor/` | Generated false color composites |
 | `/events` | SSE stream for live updates |
 | `/api/timelapse` | POST endpoint for GIF generation |
+| `/api/falsecolor` | POST endpoint for false color generation |
 
 All paths work with or without `/goes/` prefix.
 
@@ -182,7 +200,7 @@ sudo bash install/install.sh
 ```
 
 This installs:
-- nginx and ffmpeg packages
+- nginx, ffmpeg, python3-pip, pillow, numpy packages
 - Web UI to `/var/www/goes/`
 - Scripts to `/usr/local/bin/`
 - systemd units to `/etc/systemd/system/`
@@ -197,12 +215,13 @@ http://<pi-ip>:8080/
 
 1. Install packages:
 ```bash
-sudo apt-get install -y nginx python3 ffmpeg
+sudo apt-get install -y nginx python3 python3-pip ffmpeg
+pip3 install pillow numpy
 ```
 
 2. Create web root:
 ```bash
-sudo mkdir -p /var/www/goes/{current,timelapse}
+sudo mkdir -p /var/www/goes/{current,timelapse,falsecolor}
 sudo chown -R www-data:www-data /var/www/goes
 ```
 
@@ -297,6 +316,11 @@ watch -n 10 cat /var/www/goes/meta.json
 2. Check ffmpeg: `which ffmpeg`
 3. Check permissions: `ls -la /var/www/goes/timelapse/`
 
+### False color generation fails
+1. Test manually: `python3 /usr/local/bin/make_false_color.py GOES-19 daynight`
+2. Check PIL/numpy: `python3 -c "from PIL import Image; import numpy"`
+3. Check permissions: `ls -la /var/www/goes/falsecolor/`
+
 ---
 
 ## Design Principles
@@ -331,6 +355,7 @@ goes-hrit-live-webui/
         goes_sse_watch.py
         make_timelapse_gif.sh
         make_timelapse.sh
+        make_false_color.py
         cleanup_satdump_old.sh
         build_mosaic.py
         install_wizard.sh

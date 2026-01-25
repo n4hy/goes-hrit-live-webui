@@ -21,7 +21,7 @@ html, body {
   flex-wrap: wrap;
 }
 
-#timelapse-controls {
+#timelapse-controls, #falsecolor-controls {
   padding: 4px 8px 8px 8px;
   display: flex;
   gap: 10px;
@@ -31,16 +31,52 @@ html, body {
   border-bottom: 1px solid #333;
 }
 
-#timelapse-controls label {
+#timelapse-controls label, #falsecolor-controls label {
   color: #aaa;
 }
 
-#timelapse-controls select {
+#timelapse-controls select, #falsecolor-controls select {
   background: #222;
   color: #ddd;
   border: 1px solid #444;
   padding: 4px 8px;
   border-radius: 3px;
+}
+
+#custom-rgb {
+  display: inline-flex;
+  gap: 8px;
+  align-items: center;
+  margin-left: 10px;
+  padding-left: 10px;
+  border-left: 1px solid #444;
+}
+
+#fcgeneratebtn {
+  background: #2a4a6a;
+  color: #fff;
+  border: 1px solid #3a6a9a;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: bold;
+}
+
+#fcgeneratebtn:hover {
+  background: #3a6a9a;
+}
+
+#fcgeneratebtn:disabled {
+  background: #333;
+  border-color: #555;
+  color: #888;
+  cursor: not-allowed;
+}
+
+#fcstatus {
+  color: #fc8;
+  font-size: 13px;
+  margin-left: 8px;
 }
 
 #generatebtn {

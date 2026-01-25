@@ -9,6 +9,7 @@ from pathlib import Path
 WEB_ROOT = Path("/var/www/goes")
 TRIGGER = WEB_ROOT / ".trigger"
 TIMELAPSE_SCRIPT = Path("/usr/local/bin/make_timelapse_gif.sh")
+FALSECOLOR_SCRIPT = Path("/usr/local/bin/make_false_color.py")
 
 HOST = "127.0.0.1"
 PORT = 8090
@@ -63,6 +64,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_POST(self):
         if self.path == "/api/timelapse":
             self.handle_timelapse()
+        elif self.path == "/api/falsecolor":
+            self.handle_falsecolor()
         else:
             self.send_response(404)
             self.end_headers()
@@ -103,6 +106,64 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_header("Content-Type", "application/json")
                 self.end_headers()
                 response = {"success": True, "message": "GIF generated", "output": result.stdout.strip()}
+                self.wfile.write(json.dumps(response).encode("utf-8"))
+            else:
+                self.send_error_json(500, result.stderr.strip() or result.stdout.strip() or "Generation failed")
+
+        except json.JSONDecodeError:
+            self.send_error_json(400, "Invalid JSON")
+        except subprocess.TimeoutExpired:
+            self.send_error_json(504, "Generation timed out")
+        except Exception as e:
+            self.send_error_json(500, str(e))
+
+    def handle_falsecolor(self):
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length).decode("utf-8")
+            data = json.loads(body)
+
+            sat = data.get("sat", "GOES-19")
+            preset = data.get("preset", "daynight")
+
+            # Validate inputs
+            if sat not in ("GOES-18", "GOES-19"):
+                self.send_error_json(400, "Invalid satellite")
+                return
+
+            valid_presets = ("daynight", "fire", "vegetation", "sandwich", "custom")
+            if preset not in valid_presets:
+                self.send_error_json(400, "Invalid preset")
+                return
+
+            # Build command
+            cmd = ["python3", str(FALSECOLOR_SCRIPT), sat, preset]
+
+            if preset == "custom":
+                r_band = data.get("r_band", "2")
+                g_band = data.get("g_band", "7")
+                b_band = data.get("b_band", "13")
+
+                valid_bands = ("2", "7", "8", "13", "14")
+                if r_band not in valid_bands or g_band not in valid_bands or b_band not in valid_bands:
+                    self.send_error_json(400, "Invalid band selection")
+                    return
+
+                cmd.extend([r_band, g_band, b_band])
+
+            # Run the false color script
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                timeout=60
+            )
+
+            if result.returncode == 0:
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                response = {"success": True, "message": "False color generated", "output": result.stdout.strip()}
                 self.wfile.write(json.dumps(response).encode("utf-8"))
             else:
                 self.send_error_json(500, result.stderr.strip() or result.stdout.strip() or "Generation failed")

@@ -17,6 +17,7 @@
     <select id="modesel">
       <option value="live">Live</option>
       <option value="timelapse">Timelapse</option>
+      <option value="falsecolor">False Color</option>
     </select>
   </div>
 
@@ -44,6 +45,45 @@
     </select>
     <button id="generatebtn">Generate GIF</button>
     <span id="gifstatus"></span>
+  </div>
+
+  <div id="falsecolor-controls" style="display:none;">
+    <label>Preset:</label>
+    <select id="fcpresetsel">
+      <option value="daynight">Day/Night</option>
+      <option value="fire">Fire/Hot Spot</option>
+      <option value="vegetation">Vegetation</option>
+      <option value="sandwich">Sandwich RGB</option>
+      <option value="custom">Custom RGB</option>
+    </select>
+    <div id="custom-rgb" style="display:none;">
+      <label>R:</label>
+      <select id="fc-r-band">
+        <option value="2">CH2</option>
+        <option value="7">CH7</option>
+        <option value="8">CH8</option>
+        <option value="13">CH13</option>
+        <option value="14">CH14</option>
+      </select>
+      <label>G:</label>
+      <select id="fc-g-band">
+        <option value="2">CH2</option>
+        <option value="7" selected>CH7</option>
+        <option value="8">CH8</option>
+        <option value="13">CH13</option>
+        <option value="14">CH14</option>
+      </select>
+      <label>B:</label>
+      <select id="fc-b-band">
+        <option value="2">CH2</option>
+        <option value="7">CH7</option>
+        <option value="8">CH8</option>
+        <option value="13" selected>CH13</option>
+        <option value="14">CH14</option>
+      </select>
+    </div>
+    <button id="fcgeneratebtn">Generate</button>
+    <span id="fcstatus"></span>
   </div>
 
   <div id="viewer">

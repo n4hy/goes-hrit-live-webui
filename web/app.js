@@ -3,12 +3,24 @@ const imgsel = document.getElementById("imgsel");
 const satsel = document.getElementById("satsel");
 const evt = document.getElementById("eventtime");
 const modesel = document.getElementById("modesel");
+
+// Timelapse controls
 const timelapseControls = document.getElementById("timelapse-controls");
 const bandsel = document.getElementById("bandsel");
 const durationsel = document.getElementById("durationsel");
 const framesel = document.getElementById("framesel");
 const generatebtn = document.getElementById("generatebtn");
 const gifstatus = document.getElementById("gifstatus");
+
+// False color controls
+const falsecolorControls = document.getElementById("falsecolor-controls");
+const fcpresetsel = document.getElementById("fcpresetsel");
+const customRgbDiv = document.getElementById("custom-rgb");
+const fcRBand = document.getElementById("fc-r-band");
+const fcGBand = document.getElementById("fc-g-band");
+const fcBBand = document.getElementById("fc-b-band");
+const fcgeneratebtn = document.getElementById("fcgeneratebtn");
+const fcstatus = document.getElementById("fcstatus");
 
 let currentMode = "live";
 
@@ -45,6 +57,40 @@ function showGif(sat, band, hours) {
     });
 }
 
+function showFalseColor(sat, preset, rBand, gBand, bBand) {
+  let imgName, metaName;
+
+  if (preset === "custom") {
+    imgName = `${sat}_custom_R${rBand}_G${gBand}_B${bBand}.png`;
+  } else {
+    imgName = `${sat}_${preset}.png`;
+  }
+  metaName = imgName.replace(".png", ".json");
+
+  const imgPath = `/goes/falsecolor/${imgName}?t=${Date.now()}`;
+  const metaPath = `/goes/falsecolor/${metaName}?t=${Date.now()}`;
+
+  img.src = imgPath;
+
+  fetch(metaPath)
+    .then(r => r.ok ? r.json() : null)
+    .then(meta => {
+      if (meta) {
+        let desc = `False Color: ${meta.preset}`;
+        if (meta.preset === "custom") {
+          desc += ` (R:CH${meta.r_band} G:CH${meta.g_band} B:CH${meta.b_band})`;
+        }
+        desc += ` | Source: ${meta.source_frame} | Generated: ${meta.generated_utc}`;
+        evt.textContent = desc;
+      } else {
+        evt.textContent = `False Color: ${sat} - ${preset}`;
+      }
+    })
+    .catch(() => {
+      evt.textContent = `False Color: ${sat} - ${preset}`;
+    });
+}
+
 async function listSats() {
   const html = await fetch("/goes/current/").then(r => r.text());
   const sats = [];
@@ -60,16 +106,6 @@ async function listImages(sat) {
   const out = [];
   files.forEach(f => { if (!seen.has(f)) { seen.add(f); out.push(f); } });
   return out;
-}
-
-async function listAvailableGifs() {
-  try {
-    const html = await fetch("/goes/timelapse/").then(r => r.text());
-    const gifs = (html.match(/GOES-\d{2}_B\d+_\d+h\.gif/g) || []);
-    return [...new Set(gifs)];
-  } catch {
-    return [];
-  }
 }
 
 async function reloadUI(autoPickNewest=true) {
@@ -110,9 +146,10 @@ async function reloadUI(autoPickNewest=true) {
       img.src = "";
       evt.textContent = `No images found for ${sat}`;
     }
-  } else {
-    // In timelapse mode, try to show existing GIF
+  } else if (currentMode === "timelapse") {
     loadTimelapseIfExists();
+  } else if (currentMode === "falsecolor") {
+    loadFalseColorIfExists();
   }
 }
 
@@ -134,6 +171,36 @@ async function loadTimelapseIfExists() {
   } catch {
     img.src = "";
     evt.textContent = "No timelapse available. Click Generate GIF to create one.";
+  }
+}
+
+async function loadFalseColorIfExists() {
+  const sat = satsel.value;
+  const preset = fcpresetsel.value;
+  const rBand = fcRBand.value;
+  const gBand = fcGBand.value;
+  const bBand = fcBBand.value;
+
+  let metaName;
+  if (preset === "custom") {
+    metaName = `${sat}_custom_R${rBand}_G${gBand}_B${bBand}.json`;
+  } else {
+    metaName = `${sat}_${preset}.json`;
+  }
+
+  const metaPath = `/goes/falsecolor/${metaName}?t=${Date.now()}`;
+  try {
+    const resp = await fetch(metaPath);
+    if (resp.ok) {
+      showFalseColor(sat, preset, rBand, gBand, bBand);
+      fcstatus.textContent = "";
+    } else {
+      img.src = "";
+      evt.textContent = "No false color image available. Click Generate to create one.";
+    }
+  } catch {
+    img.src = "";
+    evt.textContent = "No false color image available. Click Generate to create one.";
   }
 }
 
@@ -161,7 +228,6 @@ async function generateGif() {
     if (resp.ok) {
       const result = await resp.json();
       gifstatus.textContent = result.message || "Done!";
-      // Reload the timelapse
       setTimeout(() => {
         showGif(sat, band, hours);
         gifstatus.textContent = "";
@@ -177,28 +243,93 @@ async function generateGif() {
   }
 }
 
+async function generateFalseColor() {
+  const sat = satsel.value;
+  const preset = fcpresetsel.value;
+  const rBand = fcRBand.value;
+  const gBand = fcGBand.value;
+  const bBand = fcBBand.value;
+
+  if (!sat) {
+    fcstatus.textContent = "No satellite selected";
+    return;
+  }
+
+  fcgeneratebtn.disabled = true;
+  fcstatus.textContent = "Generating...";
+
+  try {
+    const body = { sat, preset };
+    if (preset === "custom") {
+      body.r_band = rBand;
+      body.g_band = gBand;
+      body.b_band = bBand;
+    }
+
+    const resp = await fetch("/goes/api/falsecolor", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    });
+
+    if (resp.ok) {
+      const result = await resp.json();
+      fcstatus.textContent = result.message || "Done!";
+      setTimeout(() => {
+        showFalseColor(sat, preset, rBand, gBand, bBand);
+        fcstatus.textContent = "";
+      }, 500);
+    } else {
+      const err = await resp.text();
+      fcstatus.textContent = `Error: ${err}`;
+    }
+  } catch (e) {
+    fcstatus.textContent = `Error: ${e.message}`;
+  } finally {
+    fcgeneratebtn.disabled = false;
+  }
+}
+
 // Mode switching
 modesel.onchange = () => {
   currentMode = modesel.value;
-  if (currentMode === "timelapse") {
+
+  // Hide all mode-specific controls
+  timelapseControls.style.display = "none";
+  falsecolorControls.style.display = "none";
+  imgsel.style.display = "";
+
+  if (currentMode === "live") {
+    reloadUI(true);
+  } else if (currentMode === "timelapse") {
     timelapseControls.style.display = "flex";
     imgsel.style.display = "none";
-    document.querySelector('label[for="imgsel"]')?.style.setProperty('display', 'none');
     loadTimelapseIfExists();
-  } else {
-    timelapseControls.style.display = "none";
-    imgsel.style.display = "";
-    document.querySelector('label[for="imgsel"]')?.style.setProperty('display', '');
-    reloadUI(true);
+  } else if (currentMode === "falsecolor") {
+    falsecolorControls.style.display = "flex";
+    imgsel.style.display = "none";
+    loadFalseColorIfExists();
   }
+};
+
+// False color preset change - show/hide custom RGB
+fcpresetsel.onchange = () => {
+  if (fcpresetsel.value === "custom") {
+    customRgbDiv.style.display = "inline-flex";
+  } else {
+    customRgbDiv.style.display = "none";
+  }
+  loadFalseColorIfExists();
 };
 
 // Event handlers
 satsel.onchange = async () => {
   if (currentMode === "live") {
     reloadUI(false);
-  } else {
+  } else if (currentMode === "timelapse") {
     loadTimelapseIfExists();
+  } else if (currentMode === "falsecolor") {
+    loadFalseColorIfExists();
   }
 };
 
@@ -207,6 +338,11 @@ imgsel.onchange = () => show(satsel.value, imgsel.value);
 bandsel.onchange = () => loadTimelapseIfExists();
 durationsel.onchange = () => loadTimelapseIfExists();
 generatebtn.onclick = generateGif;
+
+fcRBand.onchange = () => loadFalseColorIfExists();
+fcGBand.onchange = () => loadFalseColorIfExists();
+fcBBand.onchange = () => loadFalseColorIfExists();
+fcgeneratebtn.onclick = generateFalseColor;
 
 // SSE for live updates
 const es = new EventSource("/goes/events");
