@@ -21,7 +21,7 @@ html, body {
   flex-wrap: wrap;
 }
 
-#timelapse-controls, #falsecolor-controls {
+#timelapse-controls, #falsecolor-controls, #history-controls, #emwin-controls {
   padding: 4px 8px 8px 8px;
   display: flex;
   gap: 10px;
@@ -144,4 +144,75 @@ select {
 label {
   color: #888;
   font-size: 13px;
+}
+
+/* History controls */
+#history-controls button {
+  background: #333;
+  color: #ddd;
+  border: 1px solid #555;
+  padding: 4px 10px;
+  border-radius: 3px;
+  cursor: pointer;
+  font-size: 14px;
+}
+
+#history-controls button:hover {
+  background: #444;
+}
+
+#history-controls button:disabled {
+  background: #222;
+  color: #555;
+  cursor: not-allowed;
+}
+
+#hist-select {
+  min-width: 200px;
+}
+
+#hist-info {
+  color: #8cf;
+  font-size: 13px;
+  margin-left: 10px;
+}
+
+/* EMWIN controls */
+#emwin-controls button {
+  background: #2a4a6a;
+  color: #fff;
+  border: 1px solid #3a6a9a;
+  padding: 6px 14px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+#emwin-controls button:hover {
+  background: #3a6a9a;
+}
+
+#emwin-select {
+  min-width: 300px;
+  max-width: 500px;
+}
+
+#emwin-status {
+  color: #fc8;
+  font-size: 13px;
+  margin-left: 8px;
+}
+
+#emwin-content {
+  background: #0a0a0a;
+  color: #0f0;
+  font-family: monospace;
+  font-size: 12px;
+  padding: 20px;
+  margin: 10px;
+  border: 1px solid #333;
+  overflow: auto;
+  max-height: 80vh;
+  white-space: pre-wrap;
+  word-wrap: break-word;
+  text-align: left;
 }

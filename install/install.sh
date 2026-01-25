@@ -31,6 +31,7 @@ install -m 0755 scripts/build_mosaic.py /usr/local/bin/build_mosaic.py
 install -m 0755 scripts/make_timelapse.sh /usr/local/bin/make_timelapse.sh
 install -m 0755 scripts/make_timelapse_gif.sh /usr/local/bin/make_timelapse_gif.sh
 install -m 0755 scripts/make_false_color.py /usr/local/bin/make_false_color.py
+install -m 0755 scripts/list_history.py /usr/local/bin/list_history.py
 
 echo "[6/9] systemd units..."
 install -m 0644 systemd/goes-sse.service /etc/systemd/system/goes-sse.service

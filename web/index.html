@@ -2,7 +2,7 @@
 <html>
 <head>
 <meta charset="utf-8">
-<title>GOES Full Disk (Live)</title>
+<title>GOES HRIT Live</title>
 <link rel="stylesheet" href="/goes/style.css">
 </head>
 <body>
@@ -10,17 +10,36 @@
   <div id="controls">
     <label>Satellite:</label>
     <select id="satsel"></select>
+    <label>Sector:</label>
+    <select id="sectorsel">
+      <option value="Full_Disk">Full Disk</option>
+      <option value="Mesoscale_1">Mesoscale 1</option>
+      <option value="Mesoscale_2">Mesoscale 2</option>
+    </select>
     <label>Image:</label>
     <select id="imgsel"></select>
     <span class="separator"></span>
     <label>Mode:</label>
     <select id="modesel">
       <option value="live">Live</option>
+      <option value="history">History</option>
       <option value="timelapse">Timelapse</option>
       <option value="falsecolor">False Color</option>
+      <option value="emwin">EMWIN</option>
     </select>
   </div>
 
+  <!-- History Controls -->
+  <div id="history-controls" style="display:none;">
+    <button id="hist-first" title="First">&laquo;</button>
+    <button id="hist-prev" title="Previous">&lt;</button>
+    <select id="hist-select"></select>
+    <button id="hist-next" title="Next">&gt;</button>
+    <button id="hist-last" title="Last (Latest)">&raquo;</button>
+    <span id="hist-info"></span>
+  </div>
+
+  <!-- Timelapse Controls -->
   <div id="timelapse-controls" style="display:none;">
     <label>Band:</label>
     <select id="bandsel">
@@ -47,6 +66,7 @@
     <span id="gifstatus"></span>
   </div>
 
+  <!-- False Color Controls -->
   <div id="falsecolor-controls" style="display:none;">
     <label>Preset:</label>
     <select id="fcpresetsel">
@@ -54,6 +74,7 @@
       <option value="fire">Fire/Hot Spot</option>
       <option value="vegetation">Vegetation</option>
       <option value="sandwich">Sandwich RGB</option>
+      <option value="watervapor">Water Vapor</option>
       <option value="custom">Custom RGB</option>
     </select>
     <div id="custom-rgb" style="display:none;">
@@ -86,8 +107,17 @@
     <span id="fcstatus"></span>
   </div>
 
+  <!-- EMWIN Controls -->
+  <div id="emwin-controls" style="display:none;">
+    <button id="emwin-refresh">Refresh List</button>
+    <select id="emwin-select"></select>
+    <span id="emwin-status"></span>
+  </div>
+
+  <!-- Main Viewer -->
   <div id="viewer">
     <img id="img" src="" alt="GOES image">
+    <pre id="emwin-content" style="display:none;"></pre>
   </div>
 
   <div id="footer">

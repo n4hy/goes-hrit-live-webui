@@ -1,17 +1,18 @@
 # GOES HRIT Live Web UI
 
-**A production-grade pipeline for ingesting GOES-18/19 HRIT Full Disk imagery and publishing real-time web endpoints with timelapse generation.**
+**A production-grade pipeline for ingesting GOES-18/19 HRIT imagery and publishing real-time web endpoints with full-featured satellite imagery analysis.**
 
 This repository contains everything required to:
 
 - Ingest GOES-18 and GOES-19 HRIT (High Rate Information Transmission)
 - Decode ABI imagery via SatDump
-- Select only **complete Full Disk frames**
+- Support **Full Disk, Mesoscale 1, and Mesoscale 2** sectors
 - Publish real-time web endpoints with Server-Sent Events (SSE)
+- Browse historical imagery with frame-by-frame navigation
 - Generate animated timelapse GIFs on demand
-- Serve via nginx with zero-cache guarantees
 - Generate false color composites from multiple bands
-- Provide an interactive web UI with Live, Timelapse, and False Color modes
+- Display EMWIN (Emergency Managers Weather Information Network) text products
+- Serve via nginx with zero-cache guarantees
 
 This is not a demo system - it is designed as **infrastructure**.
 
@@ -27,17 +28,17 @@ SDR + LNA + Filter + Dish
 SatDump HRIT Decoder
         |
 Filesystem (timestamped frames)
-   /home/pi/sat/GOES-{18,19}/IMAGES/GOES-{18,19}/Full Disk/
+   /home/pi/sat/GOES-{18,19}/IMAGES/GOES-{18,19}/{Full Disk,Mesoscale 1,Mesoscale 2}/
         |
 update_goes_multi_web.sh (publisher)
         |
-/var/www/goes/current/{GOES-18,GOES-19}/
+/var/www/goes/current/{GOES-18,GOES-19}/{Full_Disk,Mesoscale_1,Mesoscale_2}/
         |
-goes_sse_watch.py (SSE server + timelapse/falsecolor API)
+goes_sse_watch.py (SSE server + all APIs)
         |
 nginx (port 8080)
         |
-Web UI (Live + Timelapse + False Color modes)
+Web UI (Live + History + Timelapse + False Color + EMWIN modes)
 ```
 
 ---
@@ -47,9 +48,17 @@ Web UI (Live + Timelapse + False Color modes)
 ### Live Mode
 - Real-time satellite image display
 - Satellite selector (GOES-18 / GOES-19)
+- Sector selector (Full Disk, Mesoscale 1, Mesoscale 2)
 - Image/band selector
 - Auto-refresh via Server-Sent Events
 - No browser caching
+
+### History Mode
+- Browse historical imagery frame-by-frame
+- Navigation controls (First, Previous, Next, Last)
+- Dropdown selector for direct frame access
+- Available bands shown per frame
+- Sorted by timestamp (newest first)
 
 ### Timelapse Mode
 - On-demand animated GIF generation
@@ -60,13 +69,21 @@ Web UI (Live + Timelapse + False Color modes)
 
 ### False Color Mode
 - On-demand false color composite generation
-- Five preset algorithms:
+- Six preset algorithms:
   - **Day/Night** - Visible by day, IR by night (GeoColor-style)
   - **Fire/Hot Spot** - CH7 shortwave IR highlights fires and hot spots
   - **Vegetation** - Enhanced vegetation visibility
   - **Sandwich RGB** - Visible + IR blend for cloud texture
+  - **Water Vapor** - CH8 (6.2um) upper-level water vapor visualization
   - **Custom RGB** - User-selectable R/G/B band assignments
 - Custom mode allows any combination of CH2, CH7, CH8, CH13, CH14
+
+### EMWIN Mode
+- Emergency Managers Weather Information Network text products
+- Auto-discovery of EMWIN product directories
+- Recent products list with refresh
+- Full-text product display with monospace formatting
+- Sorted by modification time (newest first)
 
 ---
 
@@ -75,16 +92,25 @@ Web UI (Live + Timelapse + False Color modes)
 ### SatDump Output
 
 ```
-/home/pi/sat/GOES-19/IMAGES/GOES-19/Full Disk/
-    2026-01-25_15-30-21/
-        G19_2_20260125T153021Z.png   (CH2 Visible)
-        G19_7_20260125T153021Z.png   (CH7 Clean IR)
-        G19_8_20260125T153021Z.png   (CH8 Water Vapor)
-        G19_13_20260125T153021Z.png  (CH13 Longwave IR)
-        product.cbor
+/home/pi/sat/GOES-19/IMAGES/GOES-19/
+    Full Disk/
+        2026-01-25_15-30-21/
+            G19_2_20260125T153021Z.png   (CH2 Visible)
+            G19_7_20260125T153021Z.png   (CH7 Clean IR)
+            G19_8_20260125T153021Z.png   (CH8 Water Vapor)
+            G19_13_20260125T153021Z.png  (CH13 Longwave IR)
+            product.cbor
+    Mesoscale 1/
+        2026-01-25_15-30-21/
+            ...
+    Mesoscale 2/
+        2026-01-25_15-30-21/
+            ...
+/home/pi/sat/GOES-19/EMWIN/
+    *.txt, *.TXT (weather text products)
 ```
 
-Each directory = one Full Disk frame timestamp.
+Each directory = one frame timestamp.
 
 ### Web Root
 
@@ -94,11 +120,19 @@ Each directory = one Full Disk frame timestamp.
     style.css
     app.js
     meta.json
-    meta_GOES-18.json
-    meta_GOES-19.json
+    meta_GOES-18_Full_Disk.json
+    meta_GOES-19_Full_Disk.json
+    meta_GOES-19_Mesoscale_1.json
+    ...
     current/
         GOES-18/
+            Full_Disk/
+            Mesoscale_1/
+            Mesoscale_2/
         GOES-19/
+            Full_Disk/
+            Mesoscale_1/
+            Mesoscale_2/
     timelapse/
         GOES-19_B13_6h.gif
         GOES-19_B13_6h.json
@@ -127,8 +161,9 @@ Each directory = one Full Disk frame timestamp.
 
 | File | Purpose |
 |------|---------|
-| `update_goes_multi_web.sh` | Publishes latest frames for all satellites |
-| `goes_sse_watch.py` | SSE server + timelapse/falsecolor API (port 8090) |
+| `update_goes_multi_web.sh` | Publishes latest frames for all satellites/sectors |
+| `goes_sse_watch.py` | SSE server + all APIs (port 8090) |
+| `list_history.py` | Lists historical frames for history browser |
 | `make_timelapse_gif.sh` | Generates animated GIF timelapses |
 | `make_timelapse.sh` | Generates MP4 timelapse videos |
 | `make_false_color.py` | Generates false color composite images |
@@ -167,12 +202,16 @@ Each directory = one Full Disk frame timestamp.
 |------|-------------|
 | `/` | Web UI |
 | `/goes/` | Web UI (alias) |
-| `/current/{SAT}/` | Latest images per satellite |
+| `/current/{SAT}/{SECTOR}/` | Latest images per satellite/sector |
 | `/timelapse/` | Generated timelapse GIFs |
 | `/falsecolor/` | Generated false color composites |
 | `/events` | SSE stream for live updates |
-| `/api/timelapse` | POST endpoint for GIF generation |
-| `/api/falsecolor` | POST endpoint for false color generation |
+| `/api/timelapse` | POST - Generate timelapse GIF |
+| `/api/falsecolor` | POST - Generate false color composite |
+| `/api/history` | GET - List historical frames |
+| `/api/emwin` | GET - List EMWIN products |
+| `/api/emwin/read` | GET - Read EMWIN product content |
+| `/api/sectors` | GET - List available satellites/sectors |
 
 All paths work with or without `/goes/` prefix.
 
@@ -248,15 +287,31 @@ sudo systemctl enable --now update-goes-fd-web.timer
 
 ## Configuration
 
-### Satellite Paths
+### Satellite/Sector Paths
 
-Edit `scripts/update_goes_multi_web.sh` to add/modify satellite paths:
+Edit `scripts/update_goes_multi_web.sh` to add/modify satellite and sector paths:
 
 ```bash
 CANDIDATES=(
-  "GOES-18:/home/pi/sat/GOES-18/IMAGES/GOES-18/Full Disk"
-  "GOES-19:/home/pi/sat/GOES-19/IMAGES/GOES-19/Full Disk"
+  "GOES-18:Full Disk:/home/pi/sat/GOES-18/IMAGES/GOES-18/Full Disk"
+  "GOES-19:Full Disk:/home/pi/sat/GOES-19/IMAGES/GOES-19/Full Disk"
+  "GOES-18:Mesoscale 1:/home/pi/sat/GOES-18/IMAGES/GOES-18/Mesoscale 1"
+  "GOES-19:Mesoscale 1:/home/pi/sat/GOES-19/IMAGES/GOES-19/Mesoscale 1"
+  "GOES-18:Mesoscale 2:/home/pi/sat/GOES-18/IMAGES/GOES-18/Mesoscale 2"
+  "GOES-19:Mesoscale 2:/home/pi/sat/GOES-19/IMAGES/GOES-19/Mesoscale 2"
 )
+```
+
+### EMWIN Paths
+
+The system auto-discovers EMWIN directories. Edit `scripts/goes_sse_watch.py` to add search paths:
+
+```python
+EMWIN_PATHS = [
+    "/home/pi/sat/GOES-19/EMWIN",
+    "/home/pi/sat/GOES-19/PRODUCTS/EMWIN",
+    "/home/pi/sat/goes19/EMWIN",
+]
 ```
 
 ### Timelapse Paths
@@ -351,15 +406,16 @@ goes-hrit-live-webui/
         uninstall.sh        # Cleanup script
         check.sh            # Verification script
     scripts/
-        update_goes_multi_web.sh
-        goes_sse_watch.py
-        make_timelapse_gif.sh
-        make_timelapse.sh
-        make_false_color.py
-        cleanup_satdump_old.sh
-        build_mosaic.py
-        install_wizard.sh
-        run_satdump_goes19.sh
+        update_goes_multi_web.sh  # Publisher for all satellites/sectors
+        goes_sse_watch.py         # SSE server + all APIs
+        list_history.py           # History frame listing
+        make_timelapse_gif.sh     # GIF timelapse generator
+        make_timelapse.sh         # MP4 timelapse generator
+        make_false_color.py       # False color compositor
+        cleanup_satdump_old.sh    # Old data cleanup
+        build_mosaic.py           # Image mosaic builder
+        install_wizard.sh         # Interactive installer
+        run_satdump_goes19.sh     # SatDump runner
     systemd/
         goes-sse.service
         update-goes-fd-web.service

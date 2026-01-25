@@ -4,11 +4,12 @@ Generate false color composite images from GOES ABI bands.
 Usage: make_false_color.py <SAT> <PRESET> [R_BAND] [G_BAND] [B_BAND]
 
 Presets:
-  daynight  - CH2 (visible) blended with CH13 (IR) based on sun angle
-  fire      - CH7 (shortwave IR) highlights hot spots
-  vegetation - CH2 + CH3 combination
-  sandwich  - CH2 (visible) + CH13 (IR) sandwich blend
-  custom    - Requires R_BAND, G_BAND, B_BAND arguments
+  daynight   - CH2 (visible) blended with CH13 (IR) based on sun angle
+  fire       - CH7 (shortwave IR) highlights hot spots
+  vegetation - CH2 + CH7 combination for vegetation
+  sandwich   - CH2 (visible) + CH13 (IR) sandwich blend
+  watervapor - CH8 (6.2um) upper-level water vapor
+  custom     - Requires R_BAND, G_BAND, B_BAND arguments
 """
 
 import sys
@@ -166,6 +167,37 @@ def make_sandwich(frame_dir: Path, sat: str) -> Image.Image:
 
     return Image.fromarray(np.stack([r, g, b], axis=-1), mode='RGB')
 
+def make_watervapor(frame_dir: Path, sat: str) -> Image.Image:
+    """Water Vapor composite using CH8 upper-level water vapor."""
+    ch8 = load_band(frame_dir, sat, 8)   # Water Vapor (6.2 um)
+    ch13 = load_band(frame_dir, sat, 13) # Longwave IR
+
+    if ch8 is None:
+        raise ValueError("Missing required band 8 (Water Vapor)")
+
+    ch8_n = normalize(ch8)
+    ch8_inv = 1.0 - ch8_n  # Invert: moist air = bright
+
+    # Water vapor visualization
+    # Blue tones for dry upper atmosphere, white for moist
+    if ch13 is not None:
+        ch13_inv = 1.0 - normalize(ch13)
+        # Blend WV with IR for cloud context
+        r = ch8_inv * 0.7 + ch13_inv * 0.3
+        g = ch8_inv * 0.8 + ch13_inv * 0.2
+        b = ch8_inv * 1.0
+    else:
+        # Pure water vapor
+        r = ch8_inv * 0.6
+        g = ch8_inv * 0.8
+        b = ch8_inv * 1.0
+
+    r = np.clip(r * 255, 0, 255).astype(np.uint8)
+    g = np.clip(g * 255, 0, 255).astype(np.uint8)
+    b = np.clip(b * 255, 0, 255).astype(np.uint8)
+
+    return Image.fromarray(np.stack([r, g, b], axis=-1), mode='RGB')
+
 def make_custom(frame_dir: Path, sat: str, r_band: int, g_band: int, b_band: int) -> Image.Image:
     """Custom RGB composite from user-selected bands."""
     r_data = load_band(frame_dir, sat, r_band)
@@ -217,6 +249,9 @@ def main():
         elif preset == "sandwich":
             img = make_sandwich(frame_dir, sat)
             out_name = f"{sat}_sandwich.png"
+        elif preset == "watervapor":
+            img = make_watervapor(frame_dir, sat)
+            out_name = f"{sat}_watervapor.png"
         elif preset == "custom":
             if len(sys.argv) < 6:
                 print("Error: Custom preset requires R_BAND G_BAND B_BAND")
