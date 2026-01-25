@@ -363,6 +363,12 @@ Open architecture.
 Free use for research, education, and infrastructure.
 
 ---
+## AUTHOR
+Dr. Robert McGwier, PhD
+Bob McGwier, N4HY
+Science Bob
+
+---
 
 **GOES HRIT Live Web UI**
 
