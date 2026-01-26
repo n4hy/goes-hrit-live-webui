@@ -552,11 +552,24 @@ emwinSelect.onchange = () => loadEmwinProduct(emwinSelect.value);
 
 // SSE for live updates
 const es = new EventSource("/goes/events");
+let lastUpdateTime = Date.now();
+
 es.addEventListener("update", async () => {
+  lastUpdateTime = Date.now();
   if (currentMode === "live") {
     await reloadUI(true);
   }
 });
+
+// Fallback refresh if no updates for 15 minutes (live mode only)
+const STALE_TIMEOUT = 15 * 60 * 1000; // 15 minutes
+setInterval(() => {
+  if (currentMode === "live" && (Date.now() - lastUpdateTime) > STALE_TIMEOUT) {
+    console.log("No updates for 15 minutes, forcing refresh");
+    lastUpdateTime = Date.now(); // Reset to avoid rapid retries
+    reloadUI(true);
+  }
+}, 60 * 1000); // Check every minute
 
 // Initial load
 reloadUI(true);
