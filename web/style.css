@@ -121,6 +121,20 @@ html, body {
   margin-left: 8px;
 }
 
+.checkbox-label {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 12px;
+  color: #aaa;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.checkbox-label input[type="checkbox"] {
+  cursor: pointer;
+}
+
 .separator {
   width: 1px;
   height: 20px;

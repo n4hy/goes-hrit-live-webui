@@ -271,6 +271,7 @@ class Handler(BaseHTTPRequestHandler):
             band = data.get("band", "13")
             hours = data.get("hours", "6")
             frames = data.get("frames", "24")
+            reject_bad = data.get("reject_bad", True)
 
             if sat not in ("GOES-18", "GOES-19"):
                 self.send_error_json(400, "Invalid satellite")
@@ -282,8 +283,12 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error_json(400, "Invalid duration")
                 return
 
+            cmd = [str(TIMELAPSE_SCRIPT), sat, band, hours, frames]
+            if reject_bad:
+                cmd.append("--reject-bad")
+
             result = subprocess.run(
-                [str(TIMELAPSE_SCRIPT), sat, band, hours, frames],
+                cmd,
                 capture_output=True,
                 text=True,
                 timeout=120

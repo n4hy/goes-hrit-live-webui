@@ -23,6 +23,7 @@ const durationsel = document.getElementById("durationsel");
 const framesel = document.getElementById("framesel");
 const generatebtn = document.getElementById("generatebtn");
 const downloadgif = document.getElementById("downloadgif");
+const rejectbusted = document.getElementById("rejectbusted");
 const gifstatus = document.getElementById("gifstatus");
 
 // False color controls
@@ -401,6 +402,7 @@ async function generateGif() {
   const band = bandsel.value;
   const hours = durationsel.value;
   const frames = framesel.value;
+  const reject_bad = rejectbusted.checked;
 
   if (!sat) { gifstatus.textContent = "No satellite selected"; return; }
 
@@ -411,7 +413,7 @@ async function generateGif() {
     const resp = await fetch("/goes/api/timelapse", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ sat, band, hours, frames })
+      body: JSON.stringify({ sat, band, hours, frames, reject_bad })
     });
 
     if (resp.ok) {

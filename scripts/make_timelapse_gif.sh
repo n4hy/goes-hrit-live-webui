@@ -2,13 +2,25 @@
 set -euo pipefail
 
 # Generate animated GIF timelapse from GOES Full Disk images
-# Usage: make_timelapse_gif.sh <SAT> <BAND> <HOURS> [FRAMES]
-# Example: make_timelapse_gif.sh GOES-19 13 6 24
+# Usage: make_timelapse_gif.sh <SAT> <BAND> <HOURS> [FRAMES] [--reject-bad]
+# Example: make_timelapse_gif.sh GOES-19 13 6 24 --reject-bad
 
 SAT="${1:?SAT required (GOES-18 or GOES-19)}"
 BAND="${2:?BAND required (e.g. 13)}"
 HOURS="${3:-6}"
 FRAMES="${4:-24}"
+REJECT_BAD=0
+
+# Check for --reject-bad flag
+for arg in "$@"; do
+    if [[ "$arg" == "--reject-bad" ]]; then
+        REJECT_BAD=1
+    fi
+done
+
+# Minimum file size in bytes (frames smaller than this are likely corrupt)
+# Full Disk CH13 is typically 500KB+, Mesoscale smaller
+MIN_FILE_SIZE=50000
 
 ROOT="/home/pi/sat/${SAT}/IMAGES/${SAT}/Full Disk"
 OUTROOT="/var/www/goes/timelapse"
@@ -32,6 +44,34 @@ find "$ROOT" -type f -name "G??_${BAND}_*.png" -print0 2>/dev/null | \
 
 if [[ ! -s "$TMP/all.txt" ]]; then
     echo "No frames found for $SAT band $BAND in last ${HOURS}h under: $ROOT"
+    exit 1
+fi
+
+# Filter out bad frames if requested
+if [[ "$REJECT_BAD" -eq 1 ]]; then
+    mv "$TMP/all.txt" "$TMP/all_unfiltered.txt"
+    REJECTED=0
+    while IFS= read -r file; do
+        # Check file size
+        fsize=$(stat -c %s "$file" 2>/dev/null || stat -f %z "$file" 2>/dev/null || echo 0)
+        if [[ "$fsize" -lt "$MIN_FILE_SIZE" ]]; then
+            ((REJECTED++)) || true
+            continue
+        fi
+        # Check if image is valid using ffprobe
+        if ! ffprobe -v error "$file" >/dev/null 2>&1; then
+            ((REJECTED++)) || true
+            continue
+        fi
+        echo "$file"
+    done < "$TMP/all_unfiltered.txt" > "$TMP/all.txt"
+    if [[ "$REJECTED" -gt 0 ]]; then
+        echo "Rejected $REJECTED bad frame(s)"
+    fi
+fi
+
+if [[ ! -s "$TMP/all.txt" ]]; then
+    echo "No valid frames remaining after filtering"
     exit 1
 fi
 
