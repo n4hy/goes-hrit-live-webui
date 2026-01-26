@@ -174,4 +174,8 @@ That never gets old.
 
 ---
 
+Accolades: Claude  was magnificent with the WEB UI!!
+
+---
+
 *Dr. Robert McGwier (N4HY) is a signal processing researcher and amateur radio operator. This project runs 24/7 from his home, pulling down satellite imagery while he sleeps. The complete source code is available at [github.com/n4hy/goes-hrit-live-webui](https://github.com/n4hy/goes-hrit-live-webui).*
