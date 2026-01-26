@@ -282,6 +282,10 @@ async function loadEmwinProduct(path) {
 
 // Main UI reload
 async function reloadUI(autoPickNewest = true) {
+  // Save current selections before clearing
+  const prevSat = satsel.value;
+  const prevSector = sectorsel.value;
+
   const sats = await listSats();
   satsel.innerHTML = "";
   sats.forEach(s => {
@@ -297,7 +301,8 @@ async function reloadUI(autoPickNewest = true) {
     return;
   }
 
-  const sat = satsel.value || sats[0];
+  // Restore satellite selection if still valid
+  const sat = (prevSat && sats.includes(prevSat)) ? prevSat : sats[0];
   satsel.value = sat;
 
   // Load sectors for this satellite
@@ -310,7 +315,8 @@ async function reloadUI(autoPickNewest = true) {
     sectorsel.appendChild(o);
   });
 
-  const sector = sectorsel.value || sectors[0];
+  // Restore sector selection if still valid
+  const sector = (prevSector && sectors.includes(prevSector)) ? prevSector : sectors[0];
   sectorsel.value = sector;
 
   const imgs = await listImages(sat, sector);
