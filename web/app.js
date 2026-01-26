@@ -22,6 +22,7 @@ const bandsel = document.getElementById("bandsel");
 const durationsel = document.getElementById("durationsel");
 const framesel = document.getElementById("framesel");
 const generatebtn = document.getElementById("generatebtn");
+const downloadgif = document.getElementById("downloadgif");
 const gifstatus = document.getElementById("gifstatus");
 
 // False color controls
@@ -79,9 +80,15 @@ function showHistorical(sat, sector, dir, file) {
 }
 
 function showGif(sat, band, hours) {
-  img.src = `/goes/timelapse/${sat}_B${band}_${hours}h.gif?t=${Date.now()}`;
+  const gifUrl = `/goes/timelapse/${sat}_B${band}_${hours}h.gif`;
+  img.src = `${gifUrl}?t=${Date.now()}`;
   img.style.display = "";
   emwinContent.style.display = "none";
+
+  // Set up download button
+  downloadgif.href = gifUrl;
+  downloadgif.download = `${sat}_B${band}_${hours}h.gif`;
+  downloadgif.style.display = "inline";
 
   fetch(`/goes/timelapse/${sat}_B${band}_${hours}h.json?t=${Date.now()}`)
     .then(r => r.ok ? r.json() : null)
@@ -463,6 +470,7 @@ function hideAllControls() {
   timelapseControls.style.display = "none";
   falsecolorControls.style.display = "none";
   emwinControls.style.display = "none";
+  downloadgif.style.display = "none";
   imgsel.style.display = "";
   sectorsel.style.display = "";
   img.style.display = "";

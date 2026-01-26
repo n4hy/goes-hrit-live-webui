@@ -28,19 +28,19 @@ Antenna Feed → FM Bandstop → SAWbird LNA → Coax → SDR → Raspberry Pi
 
 **[The Dish](https://a.co/d/5X87izo)** (~$90): Nooelec's BBQ grill section of a parabolic reflector has sufficient efficiency and effective surface area to provide 21 dBi gain. Yeah, the forums will tell you that you need a meter-wide dish minimum. They're wrong—or at least, they were before Nooelec's LNA came along. This thing works.
 
-![Nooelec GOES Antenna System](images/nooelec-goes-antenna.jpg)
+![Nooelec GOES Antenna System](diagrams/Nooelect_BBQ_Antenna.jpg)
 
 **[The SAWbird LNA](https://a.co/d/dxBj0aZ)** (~$35): This is the secret sauce. A filtered low-noise amplifier that takes the whisper-quiet signal from 36,000 km away and boosts it while rejecting everything else. It's bias-tee powered, so it draws power right through the coax from the SDR. One less cable, one less power supply.
 
-![Nooelec SAWbird+ GOES LNA](images/nooelec-sawbird-lna.jpg)
+![Nooelec SAWbird+ GOES LNA](diagrams/SAWBIRD_LNA.jpg)
 
 **[FM Bandstop Filter](https://a.co/d/2csqoZV)** (~$15): I almost skipped this. Don't skip this. FM broadcast stations are *everywhere*, and they're loud enough to overload your SDR's front end even though they're nowhere near 1.7 GHz. Intermodulation is a harsh mistress. Fifteen bucks for clean signals.
 
-![Nooelec FM Bandstop Filter](images/nooelec-fm-bandstop.jpg)
+![Nooelec FM Bandstop Filter](diagrams/Nooelec_FM_BandstopFilter_V2.jpg)
 
 **[The SDR](https://a.co/d/9rSrJn6)** (~$35): Nooelec NESDR SMArTee XTR. Built-in bias-tee to power the LNA, TCXO for frequency stability. Cheap RTL-SDRs drift with temperature—not what you want when you're trying to stay locked on a signal for weeks at a time.
 
-![Nooelec NESDR SMArTee XTR](images/nooelec-nesdr-smartee.jpg)
+![Nooelec NESDR SMArTee XTR](diagrams/NESDR_Smartee_XTR.jpg)
 
 Connect it all up, plug into a Raspberry Pi 5, and you've got a ground station. Total cost under $250 including the Pi.
 
@@ -89,6 +89,8 @@ Every ten minutes or so, a new Full Disk image appears. Every minute, the Mesosc
 Raw images in a folder are great, but I wanted more. I wanted to pull up my phone and see what's happening *right now*. I wanted to scrub back through the last day of imagery. I wanted animated timelapses. I wanted false-color composites that show things human eyes can't see.
 
 So I built a web interface.
+
+![System Architecture](diagrams/architecture.png)
 
 ![False Color - Day/Night Composite](images/screenshot-daynight.png)
 
