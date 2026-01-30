@@ -47,26 +47,22 @@ if [[ ! -s "$TMP/all.txt" ]]; then
     exit 1
 fi
 
-# Filter out bad frames if requested
+# Filter out bad frames if requested (file size check only -
+# satdump should handle demod-level filtering via --config hrit_strict.json)
 if [[ "$REJECT_BAD" -eq 1 ]]; then
     mv "$TMP/all.txt" "$TMP/all_unfiltered.txt"
     REJECTED=0
     while IFS= read -r file; do
-        # Check file size
+        # Check file size (frames smaller than threshold are likely corrupt)
         fsize=$(stat -c %s "$file" 2>/dev/null || stat -f %z "$file" 2>/dev/null || echo 0)
         if [[ "$fsize" -lt "$MIN_FILE_SIZE" ]]; then
-            ((REJECTED++)) || true
-            continue
-        fi
-        # Check if image is valid using ffprobe
-        if ! ffprobe -v error "$file" >/dev/null 2>&1; then
             ((REJECTED++)) || true
             continue
         fi
         echo "$file"
     done < "$TMP/all_unfiltered.txt" > "$TMP/all.txt"
     if [[ "$REJECTED" -gt 0 ]]; then
-        echo "Rejected $REJECTED bad frame(s)"
+        echo "Rejected $REJECTED small/corrupt frame(s)"
     fi
 fi
 

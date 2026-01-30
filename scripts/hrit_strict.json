@@ -1,0 +1,20 @@
+{
+  "deframer": {
+    "drop_crc_failed": true,
+    "drop_invalid": true,
+    "allow_partial": false
+  },
+  "fec": {
+    "discard_uncorrectable": true
+  },
+  "image_assembler": {
+    "require_full_segments": true,
+    "discard_incomplete": true,
+    "validate_continuity": true
+  },
+  "output": {
+    "save_partial": false,
+    "flush_on_stop": false,
+    "auto_export_incomplete": false
+  }
+}

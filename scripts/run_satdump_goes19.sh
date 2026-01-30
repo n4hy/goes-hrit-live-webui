@@ -9,11 +9,13 @@ FREQ="${FREQ:-1694.1e6}"
 SR="${SR:-2.048e6}"
 GAIN="${GAIN:-48}"
 OUTROOT="${OUTROOT:-/home/pi/sat/goes19}"
+CONFIG="${CONFIG:-/usr/local/etc/hrit_strict.json}"
 
 exec "${SATDUMP_BIN}" live goes_hrit GOES-19 \
   --source rtlsdr \
   --frequency "${FREQ}" \
   --samplerate "${SR}" \
   --gain "${GAIN}" \
+  --config "${CONFIG}" \
   --fill_missing \
   --output-directory "${OUTROOT}"
