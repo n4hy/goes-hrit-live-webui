@@ -41,7 +41,7 @@ install -m 0755 scripts/list_history.py /usr/local/bin/list_history.py
 
 echo "[6/9] systemd units..."
 # Install and patch service files with correct user
-for svc in goes-sse.service update-goes-fd-web.service; do
+for svc in goes-sse.service update-goes-fd-web.service satdump-goes19.service; do
   sed "s/User=pi/User=${GOES_USER}/g; s/Group=pi/Group=${GOES_USER}/g" \
     "systemd/${svc}" > "/etc/systemd/system/${svc}"
   chmod 0644 "/etc/systemd/system/${svc}"
