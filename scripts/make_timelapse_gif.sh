@@ -22,6 +22,14 @@ done
 # Full Disk CH13 is typically 500KB+, Mesoscale smaller
 MIN_FILE_SIZE=50000
 
+# Path to image validation script (check /usr/local/bin first, then script dir)
+if [[ -f "/usr/local/bin/validate_hrit_image.py" ]]; then
+  VALIDATOR="/usr/local/bin/validate_hrit_image.py"
+else
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  VALIDATOR="$SCRIPT_DIR/validate_hrit_image.py"
+fi
+
 ROOT="/home/pi/sat/${SAT}/IMAGES/${SAT}/Full Disk"
 OUTROOT="/var/www/goes/timelapse"
 mkdir -p "$OUTROOT"
@@ -47,22 +55,33 @@ if [[ ! -s "$TMP/all.txt" ]]; then
     exit 1
 fi
 
-# Filter out bad frames if requested (file size check only -
-# satdump should handle demod-level filtering via --config hrit_strict.json)
+# Filter out bad frames if requested
+# Uses both file size check AND black bar detection via validation script
 if [[ "$REJECT_BAD" -eq 1 ]]; then
     mv "$TMP/all.txt" "$TMP/all_unfiltered.txt"
     REJECTED=0
+    REJECTED_SIZE=0
+    REJECTED_CORRUPT=0
     while IFS= read -r file; do
         # Check file size (frames smaller than threshold are likely corrupt)
         fsize=$(stat -c %s "$file" 2>/dev/null || stat -f %z "$file" 2>/dev/null || echo 0)
         if [[ "$fsize" -lt "$MIN_FILE_SIZE" ]]; then
             ((REJECTED++)) || true
+            ((REJECTED_SIZE++)) || true
             continue
+        fi
+        # Check for black bar corruption using validation script
+        if [[ -f "$VALIDATOR" ]] && command -v python3 &>/dev/null; then
+            if ! python3 "$VALIDATOR" "$file" --threshold 0.02 --min-bar-height 8 >/dev/null 2>&1; then
+                ((REJECTED++)) || true
+                ((REJECTED_CORRUPT++)) || true
+                continue
+            fi
         fi
         echo "$file"
     done < "$TMP/all_unfiltered.txt" > "$TMP/all.txt"
     if [[ "$REJECTED" -gt 0 ]]; then
-        echo "Rejected $REJECTED small/corrupt frame(s)"
+        echo "Rejected $REJECTED frame(s) ($REJECTED_SIZE too small, $REJECTED_CORRUPT with black bars)"
     fi
 fi
 

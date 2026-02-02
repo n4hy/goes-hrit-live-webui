@@ -9,6 +9,7 @@ from pathlib import Path
 
 WEB_ROOT = Path("/var/www/goes")
 TRIGGER = WEB_ROOT / ".trigger"
+VALIDATION_CONFIG = WEB_ROOT / ".validation_enabled"
 TIMELAPSE_SCRIPT = Path("/usr/local/bin/make_timelapse_gif.sh")
 FALSECOLOR_SCRIPT = Path("/usr/local/bin/make_false_color.py")
 HISTORY_SCRIPT = Path("/usr/local/bin/list_history.py")
@@ -106,6 +107,27 @@ def read_emwin_product(path):
             return None
     return None
 
+
+def get_validation_enabled():
+    """Check if image validation is enabled (default: True)."""
+    try:
+        if VALIDATION_CONFIG.exists():
+            content = VALIDATION_CONFIG.read_text().strip().lower()
+            return content in ('1', 'true', 'yes', 'enabled')
+        return True  # Default to enabled
+    except:
+        return True
+
+
+def set_validation_enabled(enabled: bool):
+    """Set image validation enabled/disabled."""
+    try:
+        VALIDATION_CONFIG.write_text('1' if enabled else '0')
+        return True
+    except Exception as e:
+        print(f"Failed to write validation config: {e}")
+        return False
+
 class Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         parsed = urllib.parse.urlparse(self.path)
@@ -124,6 +146,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_emwin_read(query)
         elif path == "/api/sectors":
             self.handle_sectors()
+        elif path == "/api/validation":
+            self.handle_validation_get()
         else:
             self.send_response(404)
             self.end_headers()
@@ -251,11 +275,18 @@ class Handler(BaseHTTPRequestHandler):
                             })
         self.send_json_response(200, sectors)
 
+    def handle_validation_get(self):
+        """Get current validation setting."""
+        enabled = get_validation_enabled()
+        self.send_json_response(200, {"enabled": enabled})
+
     def do_POST(self):
         if self.path == "/api/timelapse":
             self.handle_timelapse()
         elif self.path == "/api/falsecolor":
             self.handle_falsecolor()
+        elif self.path == "/api/validation":
+            self.handle_validation_post()
         else:
             self.send_response(404)
             self.end_headers()
@@ -349,6 +380,28 @@ class Handler(BaseHTTPRequestHandler):
             self.send_error_json(400, "Invalid JSON")
         except subprocess.TimeoutExpired:
             self.send_error_json(504, "Generation timed out")
+        except Exception as e:
+            self.send_error_json(500, str(e))
+
+    def handle_validation_post(self):
+        """Set validation enabled/disabled."""
+        try:
+            length = int(self.headers.get("Content-Length", 0))
+            body = self.rfile.read(length).decode("utf-8")
+            data = json.loads(body)
+
+            enabled = data.get("enabled", True)
+            if not isinstance(enabled, bool):
+                self.send_error_json(400, "enabled must be a boolean")
+                return
+
+            if set_validation_enabled(enabled):
+                self.send_json_response(200, {"success": True, "enabled": enabled})
+            else:
+                self.send_error_json(500, "Failed to update validation setting")
+
+        except json.JSONDecodeError:
+            self.send_error_json(400, "Invalid JSON")
         except Exception as e:
             self.send_error_json(500, str(e))
 

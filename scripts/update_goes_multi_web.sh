@@ -4,6 +4,30 @@ set -euo pipefail
 WEB_ROOT="/var/www/goes"
 TRIGGER="$WEB_ROOT/.trigger"
 META="$WEB_ROOT/meta.json"
+VALIDATION_CONFIG="$WEB_ROOT/.validation_enabled"
+# Validator script location (check /usr/local/bin first, then script dir)
+if [[ -f "/usr/local/bin/validate_hrit_image.py" ]]; then
+  VALIDATOR="/usr/local/bin/validate_hrit_image.py"
+else
+  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+  VALIDATOR="$SCRIPT_DIR/validate_hrit_image.py"
+fi
+
+# Read validation setting from config file (default: enabled)
+get_validation_enabled() {
+  if [[ -f "$VALIDATION_CONFIG" ]]; then
+    local val
+    val="$(cat "$VALIDATION_CONFIG" 2>/dev/null | tr '[:upper:]' '[:lower:]')"
+    case "$val" in
+      1|true|yes|enabled) echo 1 ;;
+      *) echo 0 ;;
+    esac
+  else
+    echo 1  # Default to enabled
+  fi
+}
+
+VALIDATE_IMAGES="$(get_validation_enabled)"
 
 # Candidate roots for Full Disk and Mesoscale (edit if needed)
 CANDIDATES=(
@@ -30,6 +54,17 @@ safe_sector_name() {
   echo "$1" | tr ' ' '_'
 }
 
+validate_image() {
+  # Validate a single image for black bar corruption
+  # Returns 0 if valid, 1 if corrupted
+  local img="$1"
+  if [[ "$VALIDATE_IMAGES" -eq 1 ]] && [[ -x "$(command -v python3)" ]] && [[ -f "$VALIDATOR" ]]; then
+    python3 "$VALIDATOR" "$img" --threshold 0.02 --min-bar-height 8 >/dev/null 2>&1
+    return $?
+  fi
+  return 0  # Skip validation if disabled or validator not available
+}
+
 publish_one() {
   local sat="$1"
   local sector="$2"
@@ -48,12 +83,26 @@ publish_one() {
   rm -f "$out/"*
 
   shopt -s nullglob
-  cp -f "$newest_dir"/*.png "$out/" 2>/dev/null || true
+  local copied=0
+  local rejected=0
+  for png in "$newest_dir"/*.png; do
+    if validate_image "$png"; then
+      cp -f "$png" "$out/" 2>/dev/null && ((copied++)) || true
+    else
+      ((rejected++)) || true
+    fi
+  done
   cp -f "$newest_dir"/product.cbor "$out/" 2>/dev/null || true
   shopt -u nullglob
 
-  printf '{\n  "satellite": "%s",\n  "sector": "%s",\n  "timestamp_dir": "%s",\n  "updated_utc": "%s"\n}\n' \
-    "$sat" "$sector" "$(basename "$newest_dir")" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+  # Only publish if at least one valid image was copied
+  if [[ "$copied" -eq 0 ]]; then
+    rm -rf "$out"
+    return 0
+  fi
+
+  printf '{\n  "satellite": "%s",\n  "sector": "%s",\n  "timestamp_dir": "%s",\n  "updated_utc": "%s",\n  "images_copied": %d,\n  "images_rejected": %d\n}\n' \
+    "$sat" "$sector" "$(basename "$newest_dir")" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$copied" "$rejected" \
     > "$WEB_ROOT/meta_${sat}_${safe_sector}.json"
 
   echo "$sat|$sector|$(basename "$newest_dir")"

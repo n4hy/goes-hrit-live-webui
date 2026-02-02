@@ -6,6 +6,7 @@ const sectorsel = document.getElementById("sectorsel");
 const evt = document.getElementById("eventtime");
 const modesel = document.getElementById("modesel");
 const emwinContent = document.getElementById("emwin-content");
+const validateimages = document.getElementById("validateimages");
 
 // History controls
 const historyControls = document.getElementById("history-controls");
@@ -552,6 +553,39 @@ fcgeneratebtn.onclick = generateFalseColor;
 emwinRefresh.onclick = loadEmwinList;
 emwinSelect.onchange = () => loadEmwinProduct(emwinSelect.value);
 
+// Image validation toggle
+async function loadValidationSetting() {
+  try {
+    const resp = await fetch("/goes/api/validation");
+    if (resp.ok) {
+      const data = await resp.json();
+      validateimages.checked = data.enabled;
+    }
+  } catch (e) {
+    console.log("Could not load validation setting:", e.message);
+  }
+}
+
+async function setValidationEnabled(enabled) {
+  try {
+    const resp = await fetch("/goes/api/validation", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled })
+    });
+    if (!resp.ok) {
+      console.error("Failed to update validation setting");
+      // Revert checkbox on failure
+      validateimages.checked = !enabled;
+    }
+  } catch (e) {
+    console.error("Error updating validation setting:", e.message);
+    validateimages.checked = !enabled;
+  }
+}
+
+validateimages.onchange = () => setValidationEnabled(validateimages.checked);
+
 // SSE for live updates
 const es = new EventSource("/goes/events");
 let lastUpdateTime = Date.now();
@@ -574,4 +608,5 @@ setInterval(() => {
 }, 60 * 1000); // Check every minute
 
 // Initial load
+loadValidationSetting();
 reloadUI(true);

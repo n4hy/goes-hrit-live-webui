@@ -33,6 +33,7 @@ install -m 0755 scripts/run_satdump_goes19.sh /usr/local/bin/run_satdump_goes19.
 install -m 0644 scripts/hrit_strict.json /usr/local/etc/hrit_strict.json
 install -m 0755 scripts/update_goes_multi_web.sh /usr/local/bin/update_goes_multi_web.sh
 install -m 0755 scripts/goes_sse_watch.py /usr/local/bin/goes_sse_watch.py
+install -m 0755 scripts/validate_hrit_image.py /usr/local/bin/validate_hrit_image.py
 install -m 0755 scripts/build_mosaic.py /usr/local/bin/build_mosaic.py
 install -m 0755 scripts/make_timelapse.sh /usr/local/bin/make_timelapse.sh
 install -m 0755 scripts/make_timelapse_gif.sh /usr/local/bin/make_timelapse_gif.sh
