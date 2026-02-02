@@ -85,6 +85,13 @@ Web UI (Live + History + Timelapse + False Color + EMWIN modes)
 - Full-text product display with monospace formatting
 - Sorted by modification time (newest first)
 
+### Bad Frame Protection
+- Automatic detection of frames with black bar corruption
+- Corrupt frames rejected before publishing (never displayed in live view)
+- Background cleanup deletes bad frames from source directories
+- Statistics tracking for RF health monitoring
+- Protects all display modes: live, history, timelapse, false color
+
 ---
 
 ## Disk Layout
@@ -168,6 +175,10 @@ Each directory = one frame timestamp.
 | `make_timelapse.sh` | Generates MP4 timelapse videos |
 | `make_false_color.py` | Generates false color composite images |
 | `cleanup_satdump_old.sh` | Removes old SatDump data |
+| `validate_frame.py` | Detects black bar corruption in frames |
+| `cleanup_bad_frames.sh` | Scans and deletes corrupt frames |
+| `log_frame_stats.sh` | Logs frame validation statistics |
+| `show_frame_stats.sh` | Displays RF health statistics |
 
 ### systemd Units
 
@@ -179,6 +190,8 @@ Each directory = one frame timestamp.
 | `satdump-cleanup.service` | Cleanup service |
 | `satdump-cleanup.timer` | Cleanup timer |
 | `satdump-goes19.service` | SatDump decoder service |
+| `cleanup-bad-frames.service` | Bad frame cleanup service |
+| `cleanup-bad-frames.timer` | Runs cleanup every 15 minutes |
 
 ### Web Files
 
@@ -324,12 +337,114 @@ ROOT="/home/pi/sat/${SAT}/IMAGES/${SAT}/Full Disk"
 
 ---
 
+## Bad Frame Protection
+
+GOES HRIT reception can produce frames with horizontal black bands due to:
+- Incomplete data reception
+- RF interference
+- Signal degradation (rain fade, antenna issues)
+- Demodulation errors
+
+The system automatically detects and removes these corrupt frames.
+
+### How It Works
+
+1. **Publisher Validation** (`update_goes_multi_web.sh`)
+   - Validates each Full Disk frame before publishing
+   - Corrupt frames are rejected and never displayed in live view
+   - Falls back to older directories if newest has all-bad frames
+   - Logs rejections to `/var/log/goes/rejected_frames.log`
+
+2. **Background Cleanup** (`cleanup_bad_frames.sh`)
+   - Runs every 15 minutes via systemd timer
+   - Scans last 6 hours of Full Disk frames
+   - Deletes corrupt frames from source directories
+   - Removes bad frames from history mode
+   - Logs deletions to `/var/log/goes/deleted_frames.log`
+
+3. **Detection Algorithm** (`validate_frame.py`)
+   - Analyzes center disk region (avoids corner artifacts)
+   - Detects consecutive black rows spanning >50% of width
+   - Requires sharp brightness transitions (distinguishes from nighttime)
+   - Minimum 50 rows of black to trigger rejection
+
+### RF Health Statistics
+
+Corruption rate tracks RF system health over time. Statistics are logged to CSV:
+
+```
+/var/log/goes/frame_stats.csv
+```
+
+**View statistics:**
+```bash
+show_frame_stats.sh           # Formatted table with summary
+show_frame_stats.sh --csv     # Raw CSV for analysis
+show_frame_stats.sh --hours 6 # Filter to last 6 hours
+```
+
+**Example output:**
+```
+=== GOES Frame Validation Statistics ===
+
+Timestamp            Source           Scanned Rejected     Rate  Note
+-------------------- --------------- -------- -------- --------  ----
+2026-02-02T18:14:45Z cleanup-6h           93       26    28.0%  errors=0
+2026-02-02T19:00:00Z publish-hourly       42        3     7.1%  hour=18
+
+--- Summary (last 24 hours) ---
+Total scanned: 135
+Total rejected: 29
+Overall corruption rate: 21.5%
+```
+
+**Interpreting corruption rate:**
+| Rate | Interpretation |
+|------|----------------|
+| < 5% | Excellent - optimal RF conditions |
+| 5-15% | Normal - typical reception |
+| 15-30% | Degraded - check system |
+| > 30% | Poor - investigate immediately |
+
+**Common causes of high corruption:**
+- Antenna misalignment
+- LNA degradation or failure
+- Feedline damage or water ingress
+- Local RF interference
+- Weather (rain fade)
+- SDR overheating
+
+### Manual Cleanup
+
+Run cleanup manually to purge bad frames:
+
+```bash
+# Dry run - show what would be deleted
+cleanup_bad_frames.sh --dry-run --hours 24
+
+# Delete bad frames from last 24 hours
+cleanup_bad_frames.sh --hours 24
+
+# Full cleanup (all frames, may take several minutes)
+cleanup_bad_frames.sh --verbose
+```
+
+### Validate a Single Frame
+
+```bash
+validate_frame.py /path/to/frame.png
+# Exit code: 0 = valid, 1 = corrupt, 2 = error
+```
+
+---
+
 ## Monitoring
 
 ### Service Status
 ```bash
 systemctl status goes-sse.service
 systemctl status update-goes-fd-web.timer
+systemctl status cleanup-bad-frames.timer
 ```
 
 ### Logs
@@ -339,17 +454,33 @@ journalctl -u update-goes-fd-web.service -f
 
 # SSE server logs
 journalctl -u goes-sse.service -f
+
+# Bad frame cleanup logs
+journalctl -u cleanup-bad-frames.service -f
 ```
 
 ### Timer Status
 ```bash
-systemctl list-timers update-goes-fd-web.timer
+systemctl list-timers update-goes-fd-web.timer cleanup-bad-frames.timer
 ```
 
 ### Verify Updates
 ```bash
 cat /var/www/goes/meta.json
 watch -n 10 cat /var/www/goes/meta.json
+```
+
+### RF Health Statistics
+```bash
+# View frame validation statistics
+show_frame_stats.sh
+
+# View rejection/deletion logs
+tail -f /var/log/goes/rejected_frames.log
+tail -f /var/log/goes/deleted_frames.log
+
+# Raw stats CSV
+cat /var/log/goes/frame_stats.csv
 ```
 
 ---
@@ -416,6 +547,10 @@ goes-hrit-live-webui/
         build_mosaic.py           # Image mosaic builder
         install_wizard.sh         # Interactive installer
         run_satdump_goes19.sh     # SatDump runner
+        validate_frame.py         # Bad frame detector
+        cleanup_bad_frames.sh     # Bad frame cleanup
+        log_frame_stats.sh        # Statistics logger
+        show_frame_stats.sh       # Statistics viewer
     systemd/
         goes-sse.service
         update-goes-fd-web.service
@@ -423,6 +558,8 @@ goes-hrit-live-webui/
         satdump-cleanup.service
         satdump-cleanup.timer
         satdump-goes19.service
+        cleanup-bad-frames.service
+        cleanup-bad-frames.timer
     nginx/
         goes-hrit-live.conf
     web/
@@ -433,6 +570,16 @@ goes-hrit-live-webui/
         SECURITY.md
     README.md
     LICENSE
+```
+
+### Log Files
+
+```
+/var/log/goes/
+    rejected_frames.log   # Frames rejected by publisher
+    deleted_frames.log    # Frames deleted by cleanup
+    frame_stats.csv       # RF health statistics
+    publish_stats.tmp     # Hourly accumulator (internal)
 ```
 
 ---

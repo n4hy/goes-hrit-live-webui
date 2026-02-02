@@ -4,30 +4,11 @@ set -euo pipefail
 WEB_ROOT="/var/www/goes"
 TRIGGER="$WEB_ROOT/.trigger"
 META="$WEB_ROOT/meta.json"
-VALIDATION_CONFIG="$WEB_ROOT/.validation_enabled"
-# Validator script location (check /usr/local/bin first, then script dir)
-if [[ -f "/usr/local/bin/validate_hrit_image.py" ]]; then
-  VALIDATOR="/usr/local/bin/validate_hrit_image.py"
-else
-  SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-  VALIDATOR="$SCRIPT_DIR/validate_hrit_image.py"
-fi
-
-# Read validation setting from config file (default: enabled)
-get_validation_enabled() {
-  if [[ -f "$VALIDATION_CONFIG" ]]; then
-    local val
-    val="$(cat "$VALIDATION_CONFIG" 2>/dev/null | tr '[:upper:]' '[:lower:]')"
-    case "$val" in
-      1|true|yes|enabled) echo 1 ;;
-      *) echo 0 ;;
-    esac
-  else
-    echo 1  # Default to enabled
-  fi
-}
-
-VALIDATE_IMAGES="$(get_validation_enabled)"
+VALIDATE_SCRIPT="/usr/local/bin/validate_frame.py"
+STATS_SCRIPT="/usr/local/bin/log_frame_stats.sh"
+LOG_DIR="/var/log/goes"
+REJECT_LOG="$LOG_DIR/rejected_frames.log"
+PUBLISH_STATS="$LOG_DIR/publish_stats.tmp"
 
 # Candidate roots for Full Disk and Mesoscale (edit if needed)
 CANDIDATES=(
@@ -40,6 +21,72 @@ CANDIDATES=(
 )
 
 mkdir -p "$WEB_ROOT/current"
+mkdir -p "$LOG_DIR" 2>/dev/null || true
+
+# Accumulated stats for this run
+total_published=0
+total_rejected=0
+
+# Load accumulated hourly stats
+load_hourly_stats() {
+  if [[ -f "$PUBLISH_STATS" ]]; then
+    source "$PUBLISH_STATS"
+  else
+    HOURLY_PUBLISHED=0
+    HOURLY_REJECTED=0
+    HOURLY_START=$(date +%H)
+  fi
+}
+
+# Save accumulated hourly stats
+save_hourly_stats() {
+  local current_hour=$(date +%H)
+
+  # If hour changed, log stats and reset
+  if [[ "$current_hour" != "$HOURLY_START" && -x "$STATS_SCRIPT" ]]; then
+    local total=$((HOURLY_PUBLISHED + HOURLY_REJECTED))
+    if [[ "$total" -gt 0 ]]; then
+      "$STATS_SCRIPT" "publish-hourly" "$total" "$HOURLY_REJECTED" "hour=$HOURLY_START" || true
+    fi
+    HOURLY_PUBLISHED=0
+    HOURLY_REJECTED=0
+    HOURLY_START=$current_hour
+  fi
+
+  # Update with this run's counts
+  HOURLY_PUBLISHED=$((HOURLY_PUBLISHED + total_published))
+  HOURLY_REJECTED=$((HOURLY_REJECTED + total_rejected))
+
+  # Save to file
+  cat > "$PUBLISH_STATS" <<EOF
+HOURLY_PUBLISHED=$HOURLY_PUBLISHED
+HOURLY_REJECTED=$HOURLY_REJECTED
+HOURLY_START=$HOURLY_START
+EOF
+}
+
+load_hourly_stats
+
+# Check if a frame is valid (no black bars)
+is_valid_frame() {
+  local png="$1"
+  # Only validate Full Disk frames (they have black bar issues)
+  # Mesoscale frames are smaller and don't have this problem
+  if [[ "$png" != *"Full"* && "$png" != *"full"* ]]; then
+    return 0
+  fi
+  # Skip if validator not available
+  [[ -x "$VALIDATE_SCRIPT" ]] || return 0
+  # Run validation - returns 0 for valid, 1 for corrupt
+  python3 "$VALIDATE_SCRIPT" "$png" >/dev/null 2>&1
+}
+
+# Log rejected frame
+log_rejection() {
+  local png="$1"
+  local reason="$2"
+  echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) REJECTED: $png - $reason" >> "$REJECT_LOG" 2>/dev/null || true
+}
 
 pick_newest_dir() {
   local root="$1"
@@ -49,20 +96,50 @@ pick_newest_dir() {
   echo "${line#* }"
 }
 
+# Pick newest directory that has at least one valid frame
+pick_newest_valid_dir() {
+  local root="$1"
+  local sector="$2"
+  local dirs
+  dirs="$(find "$root" -type f -name 'product.cbor' -printf '%T@ %h\n' 2>/dev/null | sort -nr | head -n 10 || true)"
+  [[ -z "$dirs" ]] && { echo ""; return 0; }
+
+  # For non-Full-Disk sectors, just return newest
+  if [[ "$sector" != "Full Disk" ]]; then
+    echo "$dirs" | head -n 1 | cut -d' ' -f2-
+    return 0
+  fi
+
+  # For Full Disk, find first directory with valid frames
+  while IFS= read -r line; do
+    local dir="${line#* }"
+    [[ -z "$dir" ]] && continue
+
+    # Check if any PNG in this directory is valid
+    local has_valid=0
+    for png in "$dir"/*.png; do
+      [[ -f "$png" ]] || continue
+      if is_valid_frame "$png"; then
+        has_valid=1
+        break
+      fi
+    done
+
+    if [[ "$has_valid" -eq 1 ]]; then
+      echo "$dir"
+      return 0
+    else
+      log_rejection "$dir" "All frames corrupt, skipping directory"
+    fi
+  done <<< "$dirs"
+
+  # Fallback to newest if all are bad
+  echo "$dirs" | head -n 1 | cut -d' ' -f2-
+}
+
 # Convert sector name to safe directory name
 safe_sector_name() {
   echo "$1" | tr ' ' '_'
-}
-
-validate_image() {
-  # Validate a single image for black bar corruption
-  # Returns 0 if valid, 1 if corrupted
-  local img="$1"
-  if [[ "$VALIDATE_IMAGES" -eq 1 ]] && [[ -x "$(command -v python3)" ]] && [[ -f "$VALIDATOR" ]]; then
-    python3 "$VALIDATOR" "$img" --threshold 0.02 --min-bar-height 8 >/dev/null 2>&1
-    return $?
-  fi
-  return 0  # Skip validation if disabled or validator not available
 }
 
 publish_one() {
@@ -72,7 +149,7 @@ publish_one() {
   [[ -d "$root" ]] || return 0
 
   local newest_dir
-  newest_dir="$(pick_newest_dir "$root")"
+  newest_dir="$(pick_newest_valid_dir "$root" "$sector")"
   [[ -n "$newest_dir" ]] || return 0
 
   local safe_sector
@@ -86,23 +163,28 @@ publish_one() {
   local copied=0
   local rejected=0
   for png in "$newest_dir"/*.png; do
-    if validate_image "$png"; then
-      cp -f "$png" "$out/" 2>/dev/null && ((copied++)) || true
+    [[ -f "$png" ]] || continue
+    if is_valid_frame "$png"; then
+      cp -f "$png" "$out/" 2>/dev/null && copied=$((copied + 1)) || true
     else
-      ((rejected++)) || true
+      log_rejection "$png" "Black band corruption"
+      rejected=$((rejected + 1))
     fi
   done
   cp -f "$newest_dir"/product.cbor "$out/" 2>/dev/null || true
   shopt -u nullglob
 
-  # Only publish if at least one valid image was copied
-  if [[ "$copied" -eq 0 ]]; then
-    rm -rf "$out"
-    return 0
+  # Update global stats
+  total_published=$((total_published + copied))
+  total_rejected=$((total_rejected + rejected))
+
+  # Log if we rejected any frames
+  if [[ "$rejected" -gt 0 ]]; then
+    echo "$(date -u +%Y-%m-%dT%H:%M:%SZ) $sat/$sector: Published $copied frames, rejected $rejected" >> "$REJECT_LOG" 2>/dev/null || true
   fi
 
-  printf '{\n  "satellite": "%s",\n  "sector": "%s",\n  "timestamp_dir": "%s",\n  "updated_utc": "%s",\n  "images_copied": %d,\n  "images_rejected": %d\n}\n' \
-    "$sat" "$sector" "$(basename "$newest_dir")" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$copied" "$rejected" \
+  printf '{\n  "satellite": "%s",\n  "sector": "%s",\n  "timestamp_dir": "%s",\n  "updated_utc": "%s"\n}\n' \
+    "$sat" "$sector" "$(basename "$newest_dir")" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
     > "$WEB_ROOT/meta_${sat}_${safe_sector}.json"
 
   echo "$sat|$sector|$(basename "$newest_dir")"
@@ -134,3 +216,6 @@ if [[ "$updated_any" -eq 1 ]]; then
     "$last_sat" "$last_sector" "$last_dir" "$(date -u +%Y-%m-%dT%H:%M:%SZ)" > "$META"
   touch "$TRIGGER" || true
 fi
+
+# Save hourly statistics for RF health monitoring
+save_hourly_stats
