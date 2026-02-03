@@ -363,10 +363,10 @@ The system automatically detects and removes these corrupt frames.
    - Logs deletions to `/var/log/goes/deleted_frames.log`
 
 3. **Detection Algorithm** (`validate_frame.py`)
-   - Analyzes center disk region (avoids corner artifacts)
-   - Detects consecutive black rows spanning >50% of width
-   - Requires sharp brightness transitions (distinguishes from nighttime)
-   - Minimum 50 rows of black to trigger rejection
+   - Zero-tolerance: ANY row with all identical pixels = corrupt
+   - Real satellite data always has pixel variation
+   - Analyzes center disk region (avoids image border artifacts)
+   - Simple and reliable - no false negatives
 
 ### RF Health Statistics
 
