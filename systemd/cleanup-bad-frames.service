@@ -1,0 +1,14 @@
+[Unit]
+Description=Cleanup GOES bad frames with black bars
+After=network.target
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+ExecStart=/usr/local/bin/cleanup_bad_frames.sh --hours 6
+Nice=10
+IOSchedulingClass=idle
+
+[Install]
+WantedBy=multi-user.target
