@@ -65,6 +65,8 @@ Web UI (Live + History + Timelapse + False Color + EMWIN modes)
 - Configurable band selection (CH2, CH7, CH8, CH13)
 - Configurable time window (3h, 6h, 12h, 24h)
 - Configurable frame count (12, 24, 36, 48)
+- Smart gap-filling: when corrupt frames are rejected, adjacent valid frames are used
+- Evenly-spaced target timestamps maintain smooth animation
 - Metadata display (frame count, generation time)
 
 ### False Color Mode
@@ -334,6 +336,17 @@ Edit `scripts/make_timelapse_gif.sh` to change the source path:
 ```bash
 ROOT="/home/pi/sat/${SAT}/IMAGES/${SAT}/Full Disk"
 ```
+
+### Timelapse Gap-Filling Algorithm
+
+When generating timelapses with `--reject-bad`, corrupt frames are excluded. To maintain smooth animation:
+
+1. **Target timestamps** are calculated evenly across the time window
+2. For each target, the **nearest valid frame** is selected
+3. If a frame is already used or corrupt, **adjacent valid frames** are randomly chosen
+4. This minimizes visual jumps from missing frames
+
+Example: 24h timelapse with 48 frames = target every 30 minutes. If the 12:00 frame is corrupt, the 11:30 or 12:30 frame is used instead.
 
 ---
 
