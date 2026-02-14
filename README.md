@@ -51,6 +51,7 @@ Web UI (Live + History + Timelapse + False Color + EMWIN modes)
 - Sector selector (Full Disk, Mesoscale 1, Mesoscale 2)
 - Image/band selector
 - Auto-refresh via Server-Sent Events
+- 15-minute fallback refresh if SSE updates stop
 - No browser caching
 
 ### History Mode
@@ -65,6 +66,8 @@ Web UI (Live + History + Timelapse + False Color + EMWIN modes)
 - Configurable band selection (CH2, CH7, CH8, CH13)
 - Configurable time window (3h, 6h, 12h, 24h)
 - Configurable frame count (12, 24, 36, 48)
+- **Reject bad frames** - filters out corrupt frames with missing data (black bands)
+- **Save GIF button** - download generated timelapses directly
 - Smart gap-filling: when corrupt frames are rejected, adjacent valid frames are used
 - Evenly-spaced target timestamps maintain smooth animation
 - Metadata display (frame count, generation time)
