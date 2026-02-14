@@ -91,7 +91,7 @@ Web UI (Live + History + Timelapse + False Color + EMWIN modes)
 - Recent products list with refresh
 - Full-text product display with monospace formatting
 - Sorted by modification time (newest first)
-- Automatic cleanup of products older than 30 days
+- Automatic cleanup of products older than 7 days
 
 ### Bad Frame Protection
 - Automatic detection of frames with black bar corruption
@@ -197,7 +197,7 @@ Each directory = one frame timestamp.
 | `update-goes-fd-web.timer` | Runs publisher every minute |
 | `goes-sse.service` | SSE server daemon |
 | `satdump-cleanup.service` | Data cleanup service (SatDump + EMWIN) |
-| `satdump-cleanup.timer` | Runs cleanup daily at 03:15 |
+| `satdump-cleanup.timer` | Runs cleanup daily at midnight |
 | `satdump-goes19.service` | SatDump decoder service |
 | `cleanup-bad-frames.service` | Bad frame cleanup service |
 | `cleanup-bad-frames.timer` | Runs cleanup every 15 minutes |
@@ -338,10 +338,10 @@ EMWIN_PATHS = [
 
 ### EMWIN Cleanup
 
-EMWIN products (txt, gif, jpg, png) older than 30 days are automatically deleted by the daily cleanup. Configure retention in `/etc/satdump_cleanup.conf`:
+EMWIN products (txt, gif, jpg, png) older than 7 days are automatically deleted by the daily cleanup at midnight. Configure retention in `/etc/satdump_cleanup.conf`:
 
 ```bash
-EMWIN_MAX_DAYS=30   # Days to retain EMWIN products (default: 30)
+EMWIN_MAX_DAYS=7   # Days to retain EMWIN products (default: 7)
 ```
 
 ### Timelapse Paths
