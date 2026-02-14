@@ -81,11 +81,14 @@ Web UI (Live + History + Timelapse + False Color + EMWIN modes)
 - Custom mode allows any combination of CH2, CH7, CH8, CH13, CH14
 
 ### EMWIN Mode
-- Emergency Managers Weather Information Network text products
+- Emergency Managers Weather Information Network products
+- Text products (forecasts, warnings, bulletins)
+- Graphics products (radar images, satellite composites)
 - Auto-discovery of EMWIN product directories
 - Recent products list with refresh
 - Full-text product display with monospace formatting
 - Sorted by modification time (newest first)
+- Automatic cleanup of products older than 30 days
 
 ### Bad Frame Protection
 - Automatic detection of frames with black bar corruption
@@ -117,6 +120,7 @@ Web UI (Live + History + Timelapse + False Color + EMWIN modes)
             ...
 /home/pi/sat/GOES-19/EMWIN/
     *.txt, *.TXT (weather text products)
+    *.GIF, *.JPG, *.PNG (weather graphics)
 ```
 
 Each directory = one frame timestamp.
@@ -176,7 +180,7 @@ Each directory = one frame timestamp.
 | `make_timelapse_gif.sh` | Generates animated GIF timelapses |
 | `make_timelapse.sh` | Generates MP4 timelapse videos |
 | `make_false_color.py` | Generates false color composite images |
-| `cleanup_satdump_old.sh` | Removes old SatDump data |
+| `cleanup_satdump_old.sh` | Removes old SatDump data and EMWIN products |
 | `validate_frame.py` | Detects black bar corruption in frames |
 | `cleanup_bad_frames.sh` | Scans and deletes corrupt frames |
 | `log_frame_stats.sh` | Logs frame validation statistics |
@@ -189,8 +193,8 @@ Each directory = one frame timestamp.
 | `update-goes-fd-web.service` | Publisher service |
 | `update-goes-fd-web.timer` | Runs publisher every minute |
 | `goes-sse.service` | SSE server daemon |
-| `satdump-cleanup.service` | Cleanup service |
-| `satdump-cleanup.timer` | Cleanup timer |
+| `satdump-cleanup.service` | Data cleanup service (SatDump + EMWIN) |
+| `satdump-cleanup.timer` | Runs cleanup daily at 03:15 |
 | `satdump-goes19.service` | SatDump decoder service |
 | `cleanup-bad-frames.service` | Bad frame cleanup service |
 | `cleanup-bad-frames.timer` | Runs cleanup every 15 minutes |
@@ -327,6 +331,14 @@ EMWIN_PATHS = [
     "/home/pi/sat/GOES-19/PRODUCTS/EMWIN",
     "/home/pi/sat/goes19/EMWIN",
 ]
+```
+
+### EMWIN Cleanup
+
+EMWIN products (txt, gif, jpg, png) older than 30 days are automatically deleted by the daily cleanup. Configure retention in `/etc/satdump_cleanup.conf`:
+
+```bash
+EMWIN_MAX_DAYS=30   # Days to retain EMWIN products (default: 30)
 ```
 
 ### Timelapse Paths
@@ -474,7 +486,7 @@ journalctl -u cleanup-bad-frames.service -f
 
 ### Timer Status
 ```bash
-systemctl list-timers update-goes-fd-web.timer cleanup-bad-frames.timer
+systemctl list-timers update-goes-fd-web.timer cleanup-bad-frames.timer satdump-cleanup.timer
 ```
 
 ### Verify Updates
@@ -494,6 +506,15 @@ tail -f /var/log/goes/deleted_frames.log
 
 # Raw stats CSV
 cat /var/log/goes/frame_stats.csv
+```
+
+### Data Cleanup
+```bash
+# View cleanup log (SatDump directories + EMWIN products)
+tail -f /var/log/satdump_cleanup.log
+
+# Manual cleanup run
+sudo /usr/local/bin/cleanup_satdump_old.sh
 ```
 
 ---
@@ -593,6 +614,8 @@ goes-hrit-live-webui/
     deleted_frames.log    # Frames deleted by cleanup
     frame_stats.csv       # RF health statistics
     publish_stats.tmp     # Hourly accumulator (internal)
+
+/var/log/satdump_cleanup.log  # SatDump + EMWIN cleanup log
 ```
 
 ---
