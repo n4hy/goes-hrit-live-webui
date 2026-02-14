@@ -489,6 +489,7 @@ function hideAllControls() {
 modesel.onchange = () => {
   currentMode = modesel.value;
   hideAllControls();
+  updateStatsVisibility();
 
   if (currentMode === "live") {
     reloadUI(true);
@@ -586,6 +587,34 @@ async function setValidationEnabled(enabled) {
 
 validateimages.onchange = () => setValidationEnabled(validateimages.checked);
 
+// Stats overlay
+const statsOverlay = document.getElementById("stats-overlay");
+const statsTotal = document.getElementById("stats-total");
+const statsBroken = document.getElementById("stats-broken");
+
+async function loadStats() {
+  try {
+    const resp = await fetch("/goes/api/stats");
+    if (resp.ok) {
+      const data = await resp.json();
+      if (data.total > 0) {
+        const pct = ((data.broken / data.total) * 100).toFixed(1);
+        statsTotal.textContent = `Today: ${data.total} images`;
+        statsBroken.textContent = `Broken: ${pct}%`;
+        statsBroken.className = parseFloat(pct) > 10 ? "broken-high" : "broken-low";
+      } else {
+        statsTotal.textContent = "Today: 0 images";
+        statsBroken.textContent = "";
+        statsBroken.className = "";
+      }
+    }
+  } catch {}
+}
+
+function updateStatsVisibility() {
+  statsOverlay.style.display = currentMode === "timelapse" ? "none" : "flex";
+}
+
 // SSE for live updates
 const es = new EventSource("/goes/events");
 let lastUpdateTime = Date.now();
@@ -595,6 +624,7 @@ es.addEventListener("update", async () => {
   if (currentMode === "live") {
     await reloadUI(true);
   }
+  loadStats();
 });
 
 // Fallback refresh if no updates for 15 minutes (live mode only)
@@ -609,4 +639,5 @@ setInterval(() => {
 
 // Initial load
 loadValidationSetting();
+loadStats();
 reloadUI(true);

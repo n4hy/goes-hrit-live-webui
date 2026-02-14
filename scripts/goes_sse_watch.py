@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import json
 import subprocess
+import sys
 import time
 import threading
 import urllib.parse
+from datetime import datetime, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 
@@ -124,6 +126,85 @@ def get_validation_enabled():
         return True
 
 
+# --- Today's image stats (computed in background) ---
+_validation_cache = {}   # path_str -> bool (True=valid)
+_today_stats = {"total": 0, "broken": 0, "date": "", "computing": False}
+_stats_lock = threading.Lock()
+
+def _validate_image(path):
+    """Check if an image has data-loss rows (std==0 in disk region)."""
+    from PIL import Image
+    import numpy as np
+
+    MARGIN = 500
+    try:
+        img = Image.open(path)
+    except Exception:
+        return False
+
+    arr = np.array(img)
+    if len(arr.shape) == 3:
+        arr = arr[:, :, 0]
+
+    h, w = arr.shape
+    margin = min(MARGIN, h // 10, w // 10)
+    for y in range(margin, h - margin):
+        if np.std(arr[y, margin:w - margin]) == 0:
+            return False
+    return True
+
+def compute_today_stats():
+    """Scan today's frame directories and count total/broken images."""
+    with _stats_lock:
+        if _today_stats["computing"]:
+            return
+        _today_stats["computing"] = True
+
+    try:
+        today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+        total = 0
+        broken = 0
+
+        for sat in ("GOES-18", "GOES-19"):
+            for sector in ("Full Disk", "Mesoscale 1", "Mesoscale 2"):
+                root = SAT_ROOT / sat / "IMAGES" / sat / sector
+                if not root.exists():
+                    continue
+
+                for frame_dir in root.iterdir():
+                    if not frame_dir.name.startswith(today):
+                        continue
+                    if not frame_dir.is_dir():
+                        continue
+
+                    for png in frame_dir.glob("G*_*_*.png"):
+                        total += 1
+                        path_str = str(png)
+
+                        if path_str in _validation_cache:
+                            if not _validation_cache[path_str]:
+                                broken += 1
+                            continue
+
+                        valid = _validate_image(png)
+                        _validation_cache[path_str] = valid
+                        if not valid:
+                            broken += 1
+
+        with _stats_lock:
+            _today_stats["total"] = total
+            _today_stats["broken"] = broken
+            _today_stats["date"] = today
+    finally:
+        with _stats_lock:
+            _today_stats["computing"] = False
+
+def get_today_stats():
+    """Return cached stats dict."""
+    with _stats_lock:
+        return dict(_today_stats)
+
+
 def set_validation_enabled(enabled: bool):
     """Set image validation enabled/disabled."""
     try:
@@ -153,6 +234,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_sectors()
         elif path == "/api/validation":
             self.handle_validation_get()
+        elif path == "/api/stats":
+            self.handle_stats()
         else:
             self.send_response(404)
             self.end_headers()
@@ -284,6 +367,11 @@ class Handler(BaseHTTPRequestHandler):
         """Get current validation setting."""
         enabled = get_validation_enabled()
         self.send_json_response(200, {"enabled": enabled})
+
+    def handle_stats(self):
+        """Return today's image stats."""
+        stats = get_today_stats()
+        self.send_json_response(200, stats)
 
     def do_POST(self):
         if self.path == "/api/timelapse":
@@ -425,6 +513,22 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         return
 
+FALSECOLOR_PRESETS = ["daynight", "fire", "vegetation", "sandwich", "watervapor"]
+FALSECOLOR_SAT = "GOES-19"
+
+def regenerate_false_color():
+    """Regenerate all false color presets in the background."""
+    for preset in FALSECOLOR_PRESETS:
+        try:
+            result = subprocess.run(
+                ["python3", str(FALSECOLOR_SCRIPT), FALSECOLOR_SAT, preset],
+                capture_output=True, text=True, timeout=300,
+            )
+            if result.returncode != 0:
+                print(f"false color {preset}: {result.stderr.strip() or result.stdout.strip()}", file=__import__('sys').stderr)
+        except Exception as e:
+            print(f"false color {preset} error: {e}", file=__import__('sys').stderr)
+
 def watch():
     last = 0.0
     while True:
@@ -433,11 +537,15 @@ def watch():
             if m > last:
                 last = m
                 notify_update()
+                threading.Thread(target=regenerate_false_color, daemon=True).start()
+                threading.Thread(target=compute_today_stats, daemon=True).start()
         except FileNotFoundError:
             pass
         time.sleep(1.0)
 
 def main():
+    # Compute initial stats on startup
+    threading.Thread(target=compute_today_stats, daemon=True).start()
     threading.Thread(target=watch, daemon=True).start()
     httpd = ThreadingHTTPServer((HOST, PORT), Handler)
     print(f"SSE server listening on {HOST}:{PORT}")

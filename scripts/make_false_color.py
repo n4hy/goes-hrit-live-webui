@@ -28,27 +28,96 @@ SAT_ROOT = "/home/pi/sat/{sat}/IMAGES/{sat}/Full Disk"
 WEB_ROOT = Path("/var/www/goes")
 OUT_DIR = WEB_ROOT / "falsecolor"
 
-def find_latest_frame(sat: str) -> Path | None:
-    """Find the most recent Full Disk frame directory."""
+# Required bands per preset
+PRESET_BANDS = {
+    "daynight":   [2, 13],
+    "fire":       [2, 7, 13],
+    "vegetation": [2, 7],
+    "sandwich":   [2, 13],
+    "watervapor": [8, 13],
+}
+
+DISK_MARGIN = 500  # pixels from edge to avoid image border
+
+
+def validate_band(image_path: Path) -> bool:
+    """Check if a band image has data-loss rows (std==0 in disk region)."""
+    try:
+        img = Image.open(image_path)
+    except Exception:
+        return False
+
+    arr = np.array(img)
+    if len(arr.shape) == 3:
+        arr = arr[:, :, 0]
+
+    height, width = arr.shape
+    margin = min(DISK_MARGIN, height // 10, width // 10)
+
+    for y in range(margin, height - margin):
+        row = arr[y, margin:width - margin]
+        if np.std(row) == 0:
+            return False
+
+    return True
+
+
+def find_valid_frame(sat: str, required_bands: list[int]) -> tuple[Path | None, str | None]:
+    """Find the newest frame where all required bands exist with matching
+    timestamps and pass quality validation."""
     root = Path(SAT_ROOT.format(sat=sat))
     if not root.exists():
-        return None
+        return None, None
 
-    dirs = sorted(root.iterdir(), reverse=True)
-    for d in dirs:
-        if d.is_dir() and (d / "product.cbor").exists():
-            return d
-    return None
-
-def load_band(frame_dir: Path, sat: str, band: int) -> np.ndarray | None:
-    """Load a band image as grayscale numpy array."""
     sat_num = sat.replace("GOES-", "")
-    pattern = f"G{sat_num}_{band}_*.png"
-    files = list(frame_dir.glob(pattern))
-    if not files:
+
+    for frame_dir in sorted(root.iterdir(), reverse=True):
+        if not frame_dir.is_dir() or not (frame_dir / "product.cbor").exists():
+            continue
+
+        # Find PNGs to extract timestamp
+        pngs = list(frame_dir.glob(f"G{sat_num}_*_*.png"))
+        if not pngs:
+            continue
+
+        # Extract timestamp from first PNG: G19_2_20260214T120021Z.png
+        timestamp = pngs[0].stem.split("_", 2)[2]
+
+        # Check ALL required bands exist with this exact timestamp
+        band_files = {}
+        all_present = True
+        for band in required_bands:
+            expected = frame_dir / f"G{sat_num}_{band}_{timestamp}.png"
+            if not expected.exists():
+                all_present = False
+                break
+            band_files[band] = expected
+
+        if not all_present:
+            continue
+
+        # Validate each band for data quality
+        all_valid = True
+        for band, path in band_files.items():
+            if not validate_band(path):
+                print(f"  Skipping {frame_dir.name}: band {band} failed validation", file=sys.stderr)
+                all_valid = False
+                break
+
+        if all_valid:
+            return frame_dir, timestamp
+
+    return None, None
+
+
+def load_band(frame_dir: Path, sat: str, band: int, timestamp: str) -> np.ndarray | None:
+    """Load a band image as grayscale numpy array using exact timestamp."""
+    sat_num = sat.replace("GOES-", "")
+    path = frame_dir / f"G{sat_num}_{band}_{timestamp}.png"
+    if not path.exists():
         return None
 
-    img = Image.open(files[0]).convert('L')
+    img = Image.open(path).convert('L')
     return np.array(img, dtype=np.float32) / 255.0
 
 def normalize(arr: np.ndarray) -> np.ndarray:
@@ -58,21 +127,18 @@ def normalize(arr: np.ndarray) -> np.ndarray:
         return arr
     return (arr - mn) / (mx - mn)
 
-def make_daynight(frame_dir: Path, sat: str) -> Image.Image:
+def make_daynight(frame_dir: Path, sat: str, timestamp: str) -> Image.Image:
     """Day/Night composite: visible by day, IR by night."""
-    ch2 = load_band(frame_dir, sat, 2)   # Visible
-    ch13 = load_band(frame_dir, sat, 13) # Longwave IR
+    ch2 = load_band(frame_dir, sat, 2, timestamp)
+    ch13 = load_band(frame_dir, sat, 13, timestamp)
 
     if ch2 is None or ch13 is None:
         raise ValueError("Missing required bands (2, 13)")
 
     # Simple blend: use visible brightness to weight
-    # Brighter visible = more daytime = use visible
-    # Darker visible = nighttime = use IR (inverted for clouds=white)
     vis_weight = normalize(ch2)
-    ir_inv = 1.0 - normalize(ch13)  # Invert so cold clouds are bright
+    ir_inv = 1.0 - normalize(ch13)
 
-    # Blend
     r = vis_weight * ch2 + (1 - vis_weight) * ir_inv
     g = vis_weight * ch2 * 0.9 + (1 - vis_weight) * ir_inv * 0.9
     b = vis_weight * ch2 * 0.8 + (1 - vis_weight) * ir_inv
@@ -83,32 +149,20 @@ def make_daynight(frame_dir: Path, sat: str) -> Image.Image:
 
     return Image.fromarray(np.stack([r, g, b], axis=-1), mode='RGB')
 
-def make_fire(frame_dir: Path, sat: str) -> Image.Image:
+def make_fire(frame_dir: Path, sat: str, timestamp: str) -> Image.Image:
     """Fire/Hot Spot: CH7 shortwave IR highlights fires."""
-    ch2 = load_band(frame_dir, sat, 2)   # Visible
-    ch7 = load_band(frame_dir, sat, 7)   # Shortwave IR (fire)
-    ch13 = load_band(frame_dir, sat, 13) # Longwave IR
+    ch2 = load_band(frame_dir, sat, 2, timestamp)
+    ch7 = load_band(frame_dir, sat, 7, timestamp)
+    ch13 = load_band(frame_dir, sat, 13, timestamp)
 
-    if ch7 is None:
-        raise ValueError("Missing required band 7")
+    if ch2 is None or ch7 is None or ch13 is None:
+        raise ValueError("Missing required bands (2, 7, 13)")
 
     ch7_n = normalize(ch7)
 
-    # Fire pixels are hot in CH7
-    # Red channel = CH7 boosted
-    # Green = visible or IR
-    # Blue = IR inverted
-    r = np.clip(ch7_n * 1.5, 0, 1)  # Boost fire signal
-
-    if ch2 is not None:
-        g = normalize(ch2) * 0.7
-    else:
-        g = ch7_n * 0.5
-
-    if ch13 is not None:
-        b = (1.0 - normalize(ch13)) * 0.6
-    else:
-        b = ch7_n * 0.3
+    r = np.clip(ch7_n * 1.5, 0, 1)
+    g = normalize(ch2) * 0.7
+    b = (1.0 - normalize(ch13)) * 0.6
 
     r = np.clip(r * 255, 0, 255).astype(np.uint8)
     g = np.clip(g * 255, 0, 255).astype(np.uint8)
@@ -116,28 +170,20 @@ def make_fire(frame_dir: Path, sat: str) -> Image.Image:
 
     return Image.fromarray(np.stack([r, g, b], axis=-1), mode='RGB')
 
-def make_vegetation(frame_dir: Path, sat: str) -> Image.Image:
+def make_vegetation(frame_dir: Path, sat: str, timestamp: str) -> Image.Image:
     """Vegetation composite using visible bands."""
-    ch2 = load_band(frame_dir, sat, 2)   # Red visible
-    ch7 = load_band(frame_dir, sat, 7)   # Near-IR proxy
-    ch13 = load_band(frame_dir, sat, 13) # Thermal
+    ch2 = load_band(frame_dir, sat, 2, timestamp)
+    ch7 = load_band(frame_dir, sat, 7, timestamp)
 
-    if ch2 is None:
-        raise ValueError("Missing required band 2")
+    if ch2 is None or ch7 is None:
+        raise ValueError("Missing required bands (2, 7)")
 
     ch2_n = normalize(ch2)
+    ch7_n = normalize(ch7)
 
-    # Pseudo vegetation index
-    if ch7 is not None:
-        ch7_n = normalize(ch7)
-        # NDVI-like: vegetation appears green
-        r = ch2_n * 0.8
-        g = ch7_n * 0.9 + ch2_n * 0.3
-        b = ch2_n * 0.5
-    else:
-        r = ch2_n
-        g = ch2_n * 1.2
-        b = ch2_n * 0.7
+    r = ch2_n * 0.8
+    g = ch7_n * 0.9 + ch2_n * 0.3
+    b = ch2_n * 0.5
 
     r = np.clip(r * 255, 0, 255).astype(np.uint8)
     g = np.clip(g * 255, 0, 255).astype(np.uint8)
@@ -145,18 +191,17 @@ def make_vegetation(frame_dir: Path, sat: str) -> Image.Image:
 
     return Image.fromarray(np.stack([r, g, b], axis=-1), mode='RGB')
 
-def make_sandwich(frame_dir: Path, sat: str) -> Image.Image:
+def make_sandwich(frame_dir: Path, sat: str, timestamp: str) -> Image.Image:
     """Sandwich RGB: visible + IR blend."""
-    ch2 = load_band(frame_dir, sat, 2)   # Visible
-    ch13 = load_band(frame_dir, sat, 13) # Longwave IR
+    ch2 = load_band(frame_dir, sat, 2, timestamp)
+    ch13 = load_band(frame_dir, sat, 13, timestamp)
 
     if ch2 is None or ch13 is None:
         raise ValueError("Missing required bands (2, 13)")
 
     ch2_n = normalize(ch2)
-    ch13_inv = 1.0 - normalize(ch13)  # Invert: cold=bright
+    ch13_inv = 1.0 - normalize(ch13)
 
-    # Sandwich blend: visible for texture, IR for cloud tops
     r = ch2_n * 0.6 + ch13_inv * 0.4
     g = ch2_n * 0.5 + ch13_inv * 0.5
     b = ch13_inv * 0.8 + ch2_n * 0.2
@@ -167,30 +212,21 @@ def make_sandwich(frame_dir: Path, sat: str) -> Image.Image:
 
     return Image.fromarray(np.stack([r, g, b], axis=-1), mode='RGB')
 
-def make_watervapor(frame_dir: Path, sat: str) -> Image.Image:
+def make_watervapor(frame_dir: Path, sat: str, timestamp: str) -> Image.Image:
     """Water Vapor composite using CH8 upper-level water vapor."""
-    ch8 = load_band(frame_dir, sat, 8)   # Water Vapor (6.2 um)
-    ch13 = load_band(frame_dir, sat, 13) # Longwave IR
+    ch8 = load_band(frame_dir, sat, 8, timestamp)
+    ch13 = load_band(frame_dir, sat, 13, timestamp)
 
-    if ch8 is None:
-        raise ValueError("Missing required band 8 (Water Vapor)")
+    if ch8 is None or ch13 is None:
+        raise ValueError("Missing required bands (8, 13)")
 
     ch8_n = normalize(ch8)
-    ch8_inv = 1.0 - ch8_n  # Invert: moist air = bright
+    ch8_inv = 1.0 - ch8_n
 
-    # Water vapor visualization
-    # Blue tones for dry upper atmosphere, white for moist
-    if ch13 is not None:
-        ch13_inv = 1.0 - normalize(ch13)
-        # Blend WV with IR for cloud context
-        r = ch8_inv * 0.7 + ch13_inv * 0.3
-        g = ch8_inv * 0.8 + ch13_inv * 0.2
-        b = ch8_inv * 1.0
-    else:
-        # Pure water vapor
-        r = ch8_inv * 0.6
-        g = ch8_inv * 0.8
-        b = ch8_inv * 1.0
+    ch13_inv = 1.0 - normalize(ch13)
+    r = ch8_inv * 0.7 + ch13_inv * 0.3
+    g = ch8_inv * 0.8 + ch13_inv * 0.2
+    b = ch8_inv * 1.0
 
     r = np.clip(r * 255, 0, 255).astype(np.uint8)
     g = np.clip(g * 255, 0, 255).astype(np.uint8)
@@ -198,11 +234,11 @@ def make_watervapor(frame_dir: Path, sat: str) -> Image.Image:
 
     return Image.fromarray(np.stack([r, g, b], axis=-1), mode='RGB')
 
-def make_custom(frame_dir: Path, sat: str, r_band: int, g_band: int, b_band: int) -> Image.Image:
+def make_custom(frame_dir: Path, sat: str, timestamp: str, r_band: int, g_band: int, b_band: int) -> Image.Image:
     """Custom RGB composite from user-selected bands."""
-    r_data = load_band(frame_dir, sat, r_band)
-    g_data = load_band(frame_dir, sat, g_band)
-    b_data = load_band(frame_dir, sat, b_band)
+    r_data = load_band(frame_dir, sat, r_band, timestamp)
+    g_data = load_band(frame_dir, sat, g_band, timestamp)
+    b_data = load_band(frame_dir, sat, b_band, timestamp)
 
     if r_data is None:
         raise ValueError(f"Missing band {r_band}")
@@ -229,41 +265,49 @@ def main():
         print(f"Error: Invalid satellite {sat}")
         sys.exit(1)
 
-    frame_dir = find_latest_frame(sat)
-    if frame_dir is None:
-        print(f"Error: No frames found for {sat}")
+    # Determine required bands
+    if preset == "custom":
+        if len(sys.argv) < 6:
+            print("Error: Custom preset requires R_BAND G_BAND B_BAND")
+            sys.exit(1)
+        r_band = int(sys.argv[3])
+        g_band = int(sys.argv[4])
+        b_band = int(sys.argv[5])
+        required_bands = list(set([r_band, g_band, b_band]))
+    elif preset in PRESET_BANDS:
+        required_bands = PRESET_BANDS[preset]
+    else:
+        print(f"Error: Unknown preset {preset}")
         sys.exit(1)
+
+    frame_dir, timestamp = find_valid_frame(sat, required_bands)
+    if frame_dir is None:
+        print(f"Error: No valid frame found for {sat} with bands {required_bands}")
+        sys.exit(1)
+
+    print(f"Using frame: {frame_dir.name} (timestamp: {timestamp})")
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
 
     try:
         if preset == "daynight":
-            img = make_daynight(frame_dir, sat)
+            img = make_daynight(frame_dir, sat, timestamp)
             out_name = f"{sat}_daynight.png"
         elif preset == "fire":
-            img = make_fire(frame_dir, sat)
+            img = make_fire(frame_dir, sat, timestamp)
             out_name = f"{sat}_fire.png"
         elif preset == "vegetation":
-            img = make_vegetation(frame_dir, sat)
+            img = make_vegetation(frame_dir, sat, timestamp)
             out_name = f"{sat}_vegetation.png"
         elif preset == "sandwich":
-            img = make_sandwich(frame_dir, sat)
+            img = make_sandwich(frame_dir, sat, timestamp)
             out_name = f"{sat}_sandwich.png"
         elif preset == "watervapor":
-            img = make_watervapor(frame_dir, sat)
+            img = make_watervapor(frame_dir, sat, timestamp)
             out_name = f"{sat}_watervapor.png"
         elif preset == "custom":
-            if len(sys.argv) < 6:
-                print("Error: Custom preset requires R_BAND G_BAND B_BAND")
-                sys.exit(1)
-            r_band = int(sys.argv[3])
-            g_band = int(sys.argv[4])
-            b_band = int(sys.argv[5])
-            img = make_custom(frame_dir, sat, r_band, g_band, b_band)
+            img = make_custom(frame_dir, sat, timestamp, r_band, g_band, b_band)
             out_name = f"{sat}_custom_R{r_band}_G{g_band}_B{b_band}.png"
-        else:
-            print(f"Error: Unknown preset {preset}")
-            sys.exit(1)
 
         out_path = OUT_DIR / out_name
         img.save(out_path)
@@ -273,6 +317,7 @@ def main():
             "satellite": sat,
             "preset": preset,
             "source_frame": frame_dir.name,
+            "timestamp": timestamp,
             "generated_utc": datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
             "output": out_name
         }

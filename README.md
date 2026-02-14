@@ -74,12 +74,16 @@ Web UI (Live + History + Timelapse + False Color + EMWIN modes)
 
 ### False Color Mode
 - On-demand false color composite generation
+- **Auto-regeneration** on new frame arrival (triggered by SSE watcher)
+- **Band quality gating** - rejects bands with data-loss rows (black band corruption)
+- **Timestamp matching** - all bands in a composite must share the same observation timestamp
+- **Automatic fallback** - skips corrupt/incomplete frames and tries the next-oldest
 - Six preset algorithms:
-  - **Day/Night** - Visible by day, IR by night (GeoColor-style)
-  - **Fire/Hot Spot** - CH7 shortwave IR highlights fires and hot spots
-  - **Vegetation** - Enhanced vegetation visibility
-  - **Sandwich RGB** - Visible + IR blend for cloud texture
-  - **Water Vapor** - CH8 (6.2um) upper-level water vapor visualization
+  - **Day/Night** - Visible by day, IR by night (GeoColor-style) — requires CH2, CH13
+  - **Fire/Hot Spot** - CH7 shortwave IR highlights fires and hot spots — requires CH2, CH7, CH13
+  - **Vegetation** - Enhanced vegetation visibility — requires CH2, CH7
+  - **Sandwich RGB** - Visible + IR blend for cloud texture — requires CH2, CH13
+  - **Water Vapor** - CH8 (6.2um) upper-level water vapor visualization — requires CH8, CH13
   - **Custom RGB** - User-selectable R/G/B band assignments
 - Custom mode allows any combination of CH2, CH7, CH8, CH13, CH14
 
@@ -92,6 +96,13 @@ Web UI (Live + History + Timelapse + False Color + EMWIN modes)
 - Full-text product display with monospace formatting
 - Sorted by modification time (newest first)
 - Automatic cleanup of products older than 7 days
+
+### Signal Quality Overlay
+- **Today total images** and **Broken percentage** displayed in the upper-right corner of the image viewer
+- Visible in all modes except Timelapse (where GIF playback takes priority)
+- Gives users an at-a-glance view of signal collection degradation — a rising broken percentage indicates antenna, LNA, feedline, or RF interference issues before they become critical
+- Stats computed in the background on each new frame arrival; cached per-image to avoid redundant validation
+- Color-coded: green when broken rate is under 10%, red when above
 
 ### Bad Frame Protection
 - Automatic detection of frames with black bar corruption
@@ -234,6 +245,7 @@ Each directory = one frame timestamp.
 | `/api/emwin` | GET - List EMWIN products |
 | `/api/emwin/read` | GET - Read EMWIN product content |
 | `/api/sectors` | GET - List available satellites/sectors |
+| `/api/stats` | GET - Today's image count and broken percentage |
 
 All paths work with or without `/goes/` prefix.
 

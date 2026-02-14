@@ -148,6 +148,30 @@ html, body {
   align-items: center;
   justify-content: center;
   overflow: hidden;
+  position: relative;
+}
+
+#stats-overlay {
+  position: absolute;
+  top: 8px;
+  right: 12px;
+  display: flex;
+  gap: 14px;
+  background: rgba(0, 0, 0, 0.65);
+  padding: 5px 12px;
+  border-radius: 4px;
+  font-size: 13px;
+  color: #ccc;
+  pointer-events: none;
+  z-index: 10;
+}
+
+#stats-overlay .broken-high {
+  color: #f66;
+}
+
+#stats-overlay .broken-low {
+  color: #6d6;
 }
 
 img {
