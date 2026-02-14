@@ -56,36 +56,41 @@ def find_emwin_dir():
 
 def list_emwin_products(limit=50):
     """List recent EMWIN text products."""
+    import heapq
+    import os
+
     emwin_dir = find_emwin_dir()
     if not emwin_dir:
         return []
 
-    products = []
-    for f in emwin_dir.rglob("*.txt"):
-        try:
-            products.append({
-                "path": str(f.relative_to(emwin_dir)),
-                "name": f.name,
-                "mtime": f.stat().st_mtime,
-                "size": f.stat().st_size
-            })
-        except:
-            pass
+    # Use os.scandir for speed — single pass, no rglob over 600K+ files.
+    # Keep only the top `limit` entries by mtime using a min-heap.
+    heap = []  # min-heap of (mtime, name, size)
+    emwin_str = str(emwin_dir)
+    try:
+        with os.scandir(emwin_str) as it:
+            for entry in it:
+                if not entry.is_file(follow_symlinks=False):
+                    continue
+                name = entry.name
+                if not (name.endswith(".txt") or name.endswith(".TXT")):
+                    continue
+                try:
+                    st = entry.stat(follow_symlinks=False)
+                    item = (st.st_mtime, name, st.st_size)
+                    if len(heap) < limit:
+                        heapq.heappush(heap, item)
+                    elif st.st_mtime > heap[0][0]:
+                        heapq.heapreplace(heap, item)
+                except OSError:
+                    pass
+    except OSError:
+        return []
 
-    # Also check for .TXT files
-    for f in emwin_dir.rglob("*.TXT"):
-        try:
-            products.append({
-                "path": str(f.relative_to(emwin_dir)),
-                "name": f.name,
-                "mtime": f.stat().st_mtime,
-                "size": f.stat().st_size
-            })
-        except:
-            pass
-
-    products.sort(key=lambda x: x["mtime"], reverse=True)
-    return products[:limit]
+    # Sort the top results newest-first
+    heap.sort(key=lambda x: x[0], reverse=True)
+    return [{"path": name, "name": name, "mtime": mtime, "size": size}
+            for mtime, name, size in heap]
 
 def read_emwin_product(path):
     """Read content of an EMWIN text product."""

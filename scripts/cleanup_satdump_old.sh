@@ -67,9 +67,9 @@ while IFS= read -r dir; do
   fi
 done < <(find "${ROOT}" -type d -name '????-??-??_??-??-??' 2>/dev/null | sort)
 
-# Clean up old EMWIN products (older than 30 days)
+# Clean up old EMWIN products (older than 7 days)
 # Includes text files (.txt/.TXT) and images (.GIF/.JPG/.PNG)
-EMWIN_MAX_DAYS="${EMWIN_MAX_DAYS:-30}"
+EMWIN_MAX_DAYS="${EMWIN_MAX_DAYS:-7}"
 log "EMWIN cleanup start (EMWIN_MAX_DAYS=${EMWIN_MAX_DAYS})"
 
 emwin_deleted=0
