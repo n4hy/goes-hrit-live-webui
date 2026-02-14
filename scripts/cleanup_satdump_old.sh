@@ -67,4 +67,20 @@ while IFS= read -r dir; do
   fi
 done < <(find "${ROOT}" -type d -name '????-??-??_??-??-??' 2>/dev/null | sort)
 
+# Clean up old EMWIN products (older than 30 days)
+# Includes text files (.txt/.TXT) and images (.GIF/.JPG/.PNG)
+EMWIN_MAX_DAYS="${EMWIN_MAX_DAYS:-30}"
+log "EMWIN cleanup start (EMWIN_MAX_DAYS=${EMWIN_MAX_DAYS})"
+
+emwin_deleted=0
+while IFS= read -r emwin_dir; do
+  if [[ -d "${emwin_dir}" ]]; then
+    while IFS= read -r -d '' file; do
+      rm -f "${file}" && ((emwin_deleted++)) || true
+    done < <(find "${emwin_dir}" -maxdepth 1 -type f \( -iname '*.txt' -o -iname '*.gif' -o -iname '*.jpg' -o -iname '*.png' \) -mtime "+${EMWIN_MAX_DAYS}" -print0 2>/dev/null)
+  fi
+done < <(find "${ROOT}" -type d -iname '*EMWIN*' 2>/dev/null)
+
+log "EMWIN cleanup: deleted ${emwin_deleted} files"
+
 log "cleanup end"
