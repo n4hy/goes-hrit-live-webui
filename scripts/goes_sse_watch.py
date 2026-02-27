@@ -153,8 +153,70 @@ def _validate_image(path):
             return False
     return True
 
+def _collect_all_dates():
+    """Return sorted set of date strings found in frame directories."""
+    dates = set()
+    for receiver_dir in SAT_ROOT.iterdir():
+        if not receiver_dir.is_dir():
+            continue
+        images_dir = receiver_dir / "IMAGES"
+        if not images_dir.exists():
+            continue
+        for sat_dir in images_dir.iterdir():
+            if not sat_dir.is_dir():
+                continue
+            for sector in ("Full Disk", "Mesoscale 1", "Mesoscale 2"):
+                sector_dir = sat_dir / sector
+                if not sector_dir.exists():
+                    continue
+                for frame_dir in sector_dir.iterdir():
+                    if frame_dir.is_dir() and len(frame_dir.name) >= 10:
+                        dates.add(frame_dir.name[:10])
+    return sorted(dates)
+
+
+def _count_images_for_date(target_date):
+    """Count total and broken images for a given date string."""
+    total = 0
+    broken = 0
+    for receiver_dir in SAT_ROOT.iterdir():
+        if not receiver_dir.is_dir():
+            continue
+        images_dir = receiver_dir / "IMAGES"
+        if not images_dir.exists():
+            continue
+        for sat_dir in images_dir.iterdir():
+            if not sat_dir.is_dir():
+                continue
+            for sector in ("Full Disk", "Mesoscale 1", "Mesoscale 2"):
+                sector_dir = sat_dir / sector
+                if not sector_dir.exists():
+                    continue
+                for frame_dir in sector_dir.iterdir():
+                    if not frame_dir.name.startswith(target_date):
+                        continue
+                    if not frame_dir.is_dir():
+                        continue
+                    for png in frame_dir.glob("G*_*_*.png"):
+                        total += 1
+                        path_str = str(png)
+                        if path_str in _validation_cache:
+                            if not _validation_cache[path_str]:
+                                broken += 1
+                            continue
+                        valid = _validate_image(png)
+                        _validation_cache[path_str] = valid
+                        if not valid:
+                            broken += 1
+    return total, broken
+
+
 def compute_today_stats():
-    """Scan today's frame directories and count total/broken images."""
+    """Scan frame directories and count total/broken images.
+
+    Uses today's UTC date first; if no images exist for today,
+    falls back to the most recent date that has images.
+    """
     with _stats_lock:
         if _today_stats["computing"]:
             return
@@ -162,44 +224,15 @@ def compute_today_stats():
 
     try:
         today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
-        total = 0
-        broken = 0
+        total, broken = _count_images_for_date(today)
 
-        # Scan all receiver directories (e.g. GOES-19, goes19) for IMAGES
-        for receiver_dir in SAT_ROOT.iterdir():
-            if not receiver_dir.is_dir():
-                continue
-            images_dir = receiver_dir / "IMAGES"
-            if not images_dir.exists():
-                continue
-            # Each IMAGES dir contains satellite subdirs (GOES-18, GOES-19)
-            for sat_dir in images_dir.iterdir():
-                if not sat_dir.is_dir():
-                    continue
-                for sector in ("Full Disk", "Mesoscale 1", "Mesoscale 2"):
-                    sector_dir = sat_dir / sector
-                    if not sector_dir.exists():
-                        continue
-
-                    for frame_dir in sector_dir.iterdir():
-                        if not frame_dir.name.startswith(today):
-                            continue
-                        if not frame_dir.is_dir():
-                            continue
-
-                        for png in frame_dir.glob("G*_*_*.png"):
-                            total += 1
-                            path_str = str(png)
-
-                            if path_str in _validation_cache:
-                                if not _validation_cache[path_str]:
-                                    broken += 1
-                                continue
-
-                            valid = _validate_image(png)
-                            _validation_cache[path_str] = valid
-                            if not valid:
-                                broken += 1
+        # Fall back to most recent date with images
+        if total == 0:
+            dates = _collect_all_dates()
+            if dates:
+                latest = dates[-1]
+                total, broken = _count_images_for_date(latest)
+                today = latest
 
         with _stats_lock:
             _today_stats["total"] = total

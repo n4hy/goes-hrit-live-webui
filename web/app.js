@@ -597,13 +597,15 @@ async function loadStats() {
     const resp = await fetch("/goes/api/stats");
     if (resp.ok) {
       const data = await resp.json();
+      const todayUTC = new Date().toISOString().slice(0, 10);
+      const label = data.date === todayUTC ? "Today" : data.date;
       if (data.total > 0) {
         const pct = ((data.broken / data.total) * 100).toFixed(1);
-        statsTotal.textContent = `Today: ${data.total} images`;
+        statsTotal.textContent = `${label}: ${data.total} images`;
         statsBroken.textContent = `Broken: ${pct}%`;
         statsBroken.className = parseFloat(pct) > 10 ? "broken-high" : "broken-low";
       } else {
-        statsTotal.textContent = "Today: 0 images";
+        statsTotal.textContent = `${label}: 0 images`;
         statsBroken.textContent = "";
         statsBroken.className = "";
       }
