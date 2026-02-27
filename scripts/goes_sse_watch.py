@@ -165,31 +165,41 @@ def compute_today_stats():
         total = 0
         broken = 0
 
-        for sat in ("GOES-18", "GOES-19"):
-            for sector in ("Full Disk", "Mesoscale 1", "Mesoscale 2"):
-                root = SAT_ROOT / sat / "IMAGES" / sat / sector
-                if not root.exists():
+        # Scan all receiver directories (e.g. GOES-19, goes19) for IMAGES
+        for receiver_dir in SAT_ROOT.iterdir():
+            if not receiver_dir.is_dir():
+                continue
+            images_dir = receiver_dir / "IMAGES"
+            if not images_dir.exists():
+                continue
+            # Each IMAGES dir contains satellite subdirs (GOES-18, GOES-19)
+            for sat_dir in images_dir.iterdir():
+                if not sat_dir.is_dir():
                     continue
-
-                for frame_dir in root.iterdir():
-                    if not frame_dir.name.startswith(today):
-                        continue
-                    if not frame_dir.is_dir():
+                for sector in ("Full Disk", "Mesoscale 1", "Mesoscale 2"):
+                    sector_dir = sat_dir / sector
+                    if not sector_dir.exists():
                         continue
 
-                    for png in frame_dir.glob("G*_*_*.png"):
-                        total += 1
-                        path_str = str(png)
-
-                        if path_str in _validation_cache:
-                            if not _validation_cache[path_str]:
-                                broken += 1
+                    for frame_dir in sector_dir.iterdir():
+                        if not frame_dir.name.startswith(today):
+                            continue
+                        if not frame_dir.is_dir():
                             continue
 
-                        valid = _validate_image(png)
-                        _validation_cache[path_str] = valid
-                        if not valid:
-                            broken += 1
+                        for png in frame_dir.glob("G*_*_*.png"):
+                            total += 1
+                            path_str = str(png)
+
+                            if path_str in _validation_cache:
+                                if not _validation_cache[path_str]:
+                                    broken += 1
+                                continue
+
+                            valid = _validate_image(png)
+                            _validation_cache[path_str] = valid
+                            if not valid:
+                                broken += 1
 
         with _stats_lock:
             _today_stats["total"] = total
