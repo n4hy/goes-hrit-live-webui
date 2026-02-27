@@ -246,6 +246,7 @@ Each directory = one frame timestamp.
 | `/api/emwin/read` | GET - Read EMWIN product content |
 | `/api/sectors` | GET - List available satellites/sectors |
 | `/api/stats` | GET - Today's image count and broken percentage |
+| `/api/validation` | GET/POST - Get or set image validation enabled/disabled |
 
 All paths work with or without `/goes/` prefix.
 
