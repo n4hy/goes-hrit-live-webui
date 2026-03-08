@@ -1,0 +1,9 @@
+[Unit]
+Description=Check RTL-SDR USB dongle every 5 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target

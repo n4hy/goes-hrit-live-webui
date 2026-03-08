@@ -617,6 +617,22 @@ function updateStatsVisibility() {
   statsOverlay.style.display = currentMode === "timelapse" ? "none" : "flex";
 }
 
+// RTL-SDR alarm
+const rtlsdrAlarm = document.getElementById("rtlsdr-alarm");
+
+async function checkRtlsdr() {
+  try {
+    const resp = await fetch("/goes/api/rtlsdr");
+    if (resp.ok) {
+      const data = await resp.json();
+      rtlsdrAlarm.style.display = data.connected ? "none" : "block";
+    }
+  } catch {}
+}
+
+checkRtlsdr();
+setInterval(checkRtlsdr, 60 * 1000);
+
 // SSE for live updates
 const es = new EventSource("/goes/events");
 let lastUpdateTime = Date.now();

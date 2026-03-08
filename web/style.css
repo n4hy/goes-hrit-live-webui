@@ -255,6 +255,23 @@ label {
   margin-left: 8px;
 }
 
+/* RTL-SDR alarm banner */
+#rtlsdr-alarm {
+  background: #c00;
+  color: #fff;
+  text-align: center;
+  font-size: 20px;
+  font-weight: bold;
+  padding: 10px;
+  letter-spacing: 2px;
+  animation: alarm-pulse 1s ease-in-out infinite;
+}
+
+@keyframes alarm-pulse {
+  0%, 100% { background: #c00; }
+  50% { background: #600; }
+}
+
 #emwin-content {
   background: #0a0a0a;
   color: #0f0;

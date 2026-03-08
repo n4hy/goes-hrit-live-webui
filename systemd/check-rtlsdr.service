@@ -1,0 +1,14 @@
+[Unit]
+Description=Check if RTL-SDR USB dongle is plugged in
+After=graphical.target
+
+[Service]
+Type=oneshot
+User=pi
+Group=pi
+ExecStart=/usr/local/bin/check_rtlsdr.sh
+Environment=DISPLAY=:0
+Environment=XAUTHORITY=/home/pi/.Xauthority
+
+[Install]
+WantedBy=multi-user.target

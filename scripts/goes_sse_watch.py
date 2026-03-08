@@ -22,6 +22,8 @@ EMWIN_PATHS = [
     "/home/pi/sat/goes19/EMWIN",
 ]
 
+RTLSDR_VENDOR_PRODUCT = "0bda:2838"
+
 HOST = "127.0.0.1"
 PORT = 8090
 
@@ -279,6 +281,8 @@ class Handler(BaseHTTPRequestHandler):
             self.handle_validation_get()
         elif path == "/api/stats":
             self.handle_stats()
+        elif path == "/api/rtlsdr":
+            self.handle_rtlsdr()
         else:
             self.send_response(404)
             self.end_headers()
@@ -415,6 +419,17 @@ class Handler(BaseHTTPRequestHandler):
         """Return today's image stats."""
         stats = get_today_stats()
         self.send_json_response(200, stats)
+
+    def handle_rtlsdr(self):
+        """Check if RTL-SDR USB dongle is connected."""
+        try:
+            result = subprocess.run(
+                ["lsusb"], capture_output=True, text=True, timeout=5
+            )
+            connected = RTLSDR_VENDOR_PRODUCT in result.stdout
+        except Exception:
+            connected = False
+        self.send_json_response(200, {"connected": connected})
 
     def do_POST(self):
         if self.path == "/api/timelapse":
