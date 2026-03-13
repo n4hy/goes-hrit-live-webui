@@ -8,8 +8,9 @@ Presets:
   fire       - CH7 (shortwave IR) highlights hot spots
   vegetation - CH2 + CH7 combination for vegetation
   sandwich   - CH2 (visible) + CH13 (IR) sandwich blend
-  watervapor - CH8 (6.2um) upper-level water vapor
-  custom     - Requires R_BAND, G_BAND, B_BAND arguments
+  watervapor  - CH8 (6.2um) upper-level water vapor
+  geoearthday - GeoColor-style true color (CH1 blue, CH2 red, CH3 veggie)
+  custom      - Requires R_BAND, G_BAND, B_BAND arguments
 """
 
 import sys
@@ -34,7 +35,8 @@ PRESET_BANDS = {
     "fire":       [2, 7, 13],
     "vegetation": [2, 7],
     "sandwich":   [2, 13],
-    "watervapor": [8, 13],
+    "watervapor":  [8, 13],
+    "geoearthday": [1, 2, 3],
 }
 
 DISK_MARGIN = 500  # pixels from edge to avoid image border
@@ -234,6 +236,46 @@ def make_watervapor(frame_dir: Path, sat: str, timestamp: str) -> Image.Image:
 
     return Image.fromarray(np.stack([r, g, b], axis=-1), mode='RGB')
 
+def make_geoearthday(frame_dir: Path, sat: str, timestamp: str) -> Image.Image:
+    """GeoColor-style daytime true color composite.
+
+    Synthesizes a green channel from CH2 (red) and CH3 (veggie/NIR) since
+    ABI has no native green band.  Uses the Bah et al. (2018) formula:
+        simulated_green = 0.45*CH2 + 0.10*CH3 + 0.45*CH1
+    Then applies simple Rayleigh scattering correction to sharpen land.
+    """
+    ch1 = load_band(frame_dir, sat, 1, timestamp)   # blue visible
+    ch2 = load_band(frame_dir, sat, 2, timestamp)   # red visible
+    ch3 = load_band(frame_dir, sat, 3, timestamp)   # veggie / NIR
+
+    if ch1 is None or ch2 is None or ch3 is None:
+        raise ValueError("Missing required bands (1, 2, 3)")
+
+    ch1_n = normalize(ch1)
+    ch2_n = normalize(ch2)
+    ch3_n = normalize(ch3)
+
+    # Synthesized green (Bah et al. 2018)
+    green_syn = 0.45 * ch2_n + 0.10 * ch3_n + 0.45 * ch1_n
+
+    # Simple Rayleigh correction: reduce blue haze, boost contrast
+    rayleigh = 0.065
+    r = np.clip(ch2_n - rayleigh, 0, 1)
+    g = np.clip(green_syn - rayleigh * 0.8, 0, 1)
+    b = np.clip(ch1_n - rayleigh * 1.2, 0, 1)
+
+    # Gamma correction to brighten midtones (land surfaces)
+    gamma = 1.0 / 1.3
+    r = np.power(r, gamma)
+    g = np.power(g, gamma)
+    b = np.power(b, gamma)
+
+    r = np.clip(r * 255, 0, 255).astype(np.uint8)
+    g = np.clip(g * 255, 0, 255).astype(np.uint8)
+    b = np.clip(b * 255, 0, 255).astype(np.uint8)
+
+    return Image.fromarray(np.stack([r, g, b], axis=-1), mode='RGB')
+
 def make_custom(frame_dir: Path, sat: str, timestamp: str, r_band: int, g_band: int, b_band: int) -> Image.Image:
     """Custom RGB composite from user-selected bands."""
     r_data = load_band(frame_dir, sat, r_band, timestamp)
@@ -305,6 +347,9 @@ def main():
         elif preset == "watervapor":
             img = make_watervapor(frame_dir, sat, timestamp)
             out_name = f"{sat}_watervapor.png"
+        elif preset == "geoearthday":
+            img = make_geoearthday(frame_dir, sat, timestamp)
+            out_name = f"{sat}_geoearthday.png"
         elif preset == "custom":
             img = make_custom(frame_dir, sat, timestamp, r_band, g_band, b_band)
             out_name = f"{sat}_custom_R{r_band}_G{g_band}_B{b_band}.png"

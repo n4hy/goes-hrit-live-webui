@@ -501,7 +501,7 @@ class Handler(BaseHTTPRequestHandler):
                 self.send_error_json(400, "Invalid satellite")
                 return
 
-            valid_presets = ("daynight", "fire", "vegetation", "sandwich", "watervapor", "custom")
+            valid_presets = ("daynight", "fire", "vegetation", "sandwich", "watervapor", "geoearthday", "custom")
             if preset not in valid_presets:
                 self.send_error_json(400, "Invalid preset")
                 return
@@ -571,7 +571,7 @@ class Handler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         return
 
-FALSECOLOR_PRESETS = ["daynight", "fire", "vegetation", "sandwich", "watervapor"]
+FALSECOLOR_PRESETS = ["daynight", "fire", "vegetation", "sandwich", "watervapor", "geoearthday"]
 FALSECOLOR_SAT = "GOES-19"
 
 def regenerate_false_color():
