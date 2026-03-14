@@ -78,14 +78,15 @@ Web UI (Live + History + Timelapse + False Color + EMWIN modes)
 - **Band quality gating** - rejects bands with data-loss rows (black band corruption)
 - **Timestamp matching** - all bands in a composite must share the same observation timestamp
 - **Automatic fallback** - skips corrupt/incomplete frames and tries the next-oldest
-- Six preset algorithms:
+- Seven preset algorithms:
   - **Day/Night** - Visible by day, IR by night (GeoColor-style) — requires CH2, CH13
   - **Fire/Hot Spot** - CH7 shortwave IR highlights fires and hot spots — requires CH2, CH7, CH13
   - **Vegetation** - Enhanced vegetation visibility — requires CH2, CH7
   - **Sandwich RGB** - Visible + IR blend for cloud texture — requires CH2, CH13
   - **Water Vapor** - CH8 (6.2um) upper-level water vapor visualization — requires CH8, CH13
+  - **GeoEarthDay** - True color composite using Bah et al. green synthesis — requires CH1, CH2, CH3
   - **Custom RGB** - User-selectable R/G/B band assignments
-- Custom mode allows any combination of CH2, CH7, CH8, CH13, CH14
+- Custom mode allows any combination of available bands (CH2, CH7, CH8, CH13, CH14)
 
 ### EMWIN Mode
 - Emergency Managers Weather Information Network products
@@ -104,6 +105,13 @@ Web UI (Live + History + Timelapse + False Color + EMWIN modes)
 - Stats computed in the background on each new frame arrival; cached per-image to avoid redundant validation
 - Color-coded: green when broken rate is under 10%, red when above
 
+### RTL-SDR Disconnect Alarm
+- Detects when the RTL-SDR USB dongle is unplugged or unresponsive
+- **Web UI banner** - red "RTL-SDR DISCONNECTED" banner appears across the top of the page
+- **Desktop popup** - large red `yad` dialog on the Pi desktop (auto-dismissed when dongle returns)
+- Web UI polls `/api/rtlsdr` every 60 seconds; systemd timer checks USB every 5 minutes
+- Vendor/product ID `0bda:2838` checked via `lsusb`
+
 ### Bad Frame Protection
 - Automatic detection of frames with black bar corruption
 - Corrupt frames rejected before publishing (never displayed in live view)
@@ -121,7 +129,9 @@ Web UI (Live + History + Timelapse + False Color + EMWIN modes)
 /home/pi/sat/GOES-19/IMAGES/GOES-19/
     Full Disk/
         2026-01-25_15-30-21/
-            G19_2_20260125T153021Z.png   (CH2 Visible)
+            G19_1_20260125T153021Z.png   (CH1 Blue Visible)
+            G19_2_20260125T153021Z.png   (CH2 Red Visible)
+            G19_3_20260125T153021Z.png   (CH3 Near-IR Veggie)
             G19_7_20260125T153021Z.png   (CH7 Clean IR)
             G19_8_20260125T153021Z.png   (CH8 Water Vapor)
             G19_13_20260125T153021Z.png  (CH13 Longwave IR)
@@ -166,6 +176,7 @@ Each directory = one frame timestamp.
     falsecolor/
         GOES-19_daynight.png
         GOES-19_fire.png
+        GOES-19_geoearthday.png
         GOES-19_custom_R2_G7_B13.png
 ```
 
@@ -175,7 +186,9 @@ Each directory = one frame timestamp.
 
 | ABI Band | Wavelength | Description |
 |----------|------------|-------------|
+| CH1 | 0.47 um | Visible (Blue) |
 | CH2 | 0.64 um | Visible (Red) |
+| CH3 | 0.86 um | Near-IR (Veggie) |
 | CH7 | 3.9 um | Shortwave IR / Clean IR |
 | CH8 | 6.2 um | Upper-level Water Vapor |
 | CH13 | 10.3 um | Longwave IR (Clean Window) |
@@ -199,6 +212,7 @@ Each directory = one frame timestamp.
 | `cleanup_bad_frames.sh` | Scans and deletes corrupt frames |
 | `log_frame_stats.sh` | Logs frame validation statistics |
 | `show_frame_stats.sh` | Displays RF health statistics |
+| `check_rtlsdr.sh` | RTL-SDR disconnect alarm (desktop popup) |
 
 ### systemd Units
 
@@ -212,6 +226,8 @@ Each directory = one frame timestamp.
 | `satdump-goes19.service` | SatDump decoder service |
 | `cleanup-bad-frames.service` | Bad frame cleanup service |
 | `cleanup-bad-frames.timer` | Runs cleanup every 15 minutes |
+| `check-rtlsdr.service` | RTL-SDR disconnect checker |
+| `check-rtlsdr.timer` | Runs RTL-SDR check every 5 minutes |
 
 ### Web Files
 
@@ -247,6 +263,7 @@ Each directory = one frame timestamp.
 | `/api/sectors` | GET - List available satellites/sectors |
 | `/api/stats` | GET - Today's image count and broken percentage |
 | `/api/validation` | GET/POST - Get or set image validation enabled/disabled |
+| `/api/rtlsdr` | GET - RTL-SDR USB dongle connection status |
 
 All paths work with or without `/goes/` prefix.
 
@@ -502,7 +519,7 @@ journalctl -u cleanup-bad-frames.service -f
 
 ### Timer Status
 ```bash
-systemctl list-timers update-goes-fd-web.timer cleanup-bad-frames.timer satdump-cleanup.timer
+systemctl list-timers update-goes-fd-web.timer cleanup-bad-frames.timer satdump-cleanup.timer check-rtlsdr.timer
 ```
 
 ### Verify Updates
@@ -601,6 +618,7 @@ goes-hrit-live-webui/
         cleanup_bad_frames.sh     # Bad frame cleanup
         log_frame_stats.sh        # Statistics logger
         show_frame_stats.sh       # Statistics viewer
+        check_rtlsdr.sh           # RTL-SDR disconnect alarm
     systemd/
         goes-sse.service
         update-goes-fd-web.service
@@ -610,6 +628,8 @@ goes-hrit-live-webui/
         satdump-goes19.service
         cleanup-bad-frames.service
         cleanup-bad-frames.timer
+        check-rtlsdr.service
+        check-rtlsdr.timer
     nginx/
         goes-hrit-live.conf
     web/
