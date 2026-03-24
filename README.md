@@ -30,9 +30,10 @@ SatDump HRIT Decoder
 Filesystem (timestamped frames)
    /home/pi/sat/GOES-{18,19}/IMAGES/GOES-{18,19}/{Full Disk,Mesoscale 1,Mesoscale 2}/
         |
-update_goes_multi_web.sh (publisher)
+goes_scheduler.py (predictive publisher + composites + retention)
         |
-/var/www/goes/current/{GOES-18,GOES-19}/{Full_Disk,Mesoscale_1,Mesoscale_2}/
+/var/www/goes/current/{GOES-18,GOES-19}/
+   channel PNGs, composite PNGs (auto-cleaned after retention_days)
         |
 goes_sse_watch.py (SSE server + all APIs)
         |
@@ -167,6 +168,11 @@ Each directory = one frame timestamp.
             Mesoscale_1/
             Mesoscale_2/
         GOES-19/
+            G19_2_20260125T153021Z.png   (published channels)
+            G19_7_20260125T153021Z.png
+            G19_13_20260125T153021Z.png
+            composite_nighttime_microphysics_20260125T153021Z.png
+            composite_split_window_20260125T153021Z.png
             Full_Disk/
             Mesoscale_1/
             Mesoscale_2/
@@ -201,7 +207,9 @@ Each directory = one frame timestamp.
 
 | File | Purpose |
 |------|---------|
-| `update_goes_multi_web.sh` | Publishes latest frames for all satellites/sectors |
+| `goes_scheduler.py` | Predictive publisher + composites + image retention cleanup |
+| `goes_composites.py` | Generates composite images (nighttime microphysics, split window, day convection) |
+| `update_goes_multi_web.sh` | Legacy publisher for all satellites/sectors (replaced by scheduler) |
 | `goes_sse_watch.py` | SSE server + all APIs (port 8090) |
 | `list_history.py` | Lists historical frames for history browser |
 | `make_timelapse_gif.sh` | Generates animated GIF timelapses |
@@ -218,8 +226,9 @@ Each directory = one frame timestamp.
 
 | File | Purpose |
 |------|---------|
-| `update-goes-fd-web.service` | Publisher service |
-| `update-goes-fd-web.timer` | Runs publisher every minute |
+| `goes-scheduler.service` | Predictive scheduler: publishes, generates composites, cleans old images |
+| `update-goes-fd-web.service` | Legacy publisher service |
+| `update-goes-fd-web.timer` | Runs legacy publisher every minute |
 | `goes-sse.service` | SSE server daemon |
 | `satdump-cleanup.service` | Data cleanup service (SatDump + EMWIN) |
 | `satdump-cleanup.timer` | Runs cleanup daily at midnight |
@@ -395,6 +404,67 @@ Example: 24h timelapse with 48 frames = target every 30 minutes. If the 12:00 fr
 
 ---
 
+## GOES Scheduler
+
+The `goes_scheduler.py` service replaces blind polling with predictive scheduling. It observes frame arrival times, learns the publication interval, and sleeps until the next expected frame instead of constantly polling.
+
+### Features
+
+- **Schedule Learning** - Observes frame arrivals and calculates mean interval + stddev
+- **Predictive Polling** - Sleeps until expected arrival time with tolerance window
+- **Automatic Relearning** - After 3 consecutive missed frames, re-enters learning mode
+- **Channel Publishing** - Copies channel PNGs (CH2, CH7, CH8, CH13) to the web directory
+- **Composite Generation** - Generates Nighttime Microphysics, Split Window, and Day Convection composites via `goes_composites.py`
+- **Image Retention** - Automatically deletes published images older than `retention_days` (default: 2 days)
+
+### Configuration
+
+Configuration file: `/etc/goes-scheduler.json`
+
+Key settings (all have defaults in `goes_scheduler.py`):
+
+| Setting | Default | Description |
+|---------|---------|-------------|
+| `retention_days` | `2` | Days to keep published channel/composite images |
+| `satellites` | GOES-19 | Satellite roots and channel glob patterns |
+| `composites` | all enabled | Which composites to generate |
+| `schedule.learning_observations` | `6` | Observations before transitioning to learned mode |
+| `schedule.relearn_threshold` | `3` | Consecutive failures before relearning |
+| `schedule.default_interval_seconds` | `600` | Default polling interval (10 min) |
+| `schedule.fallback_poll_seconds` | `60` | Polling interval during learning mode |
+
+The config uses deep merging - you can override individual keys without losing unspecified defaults.
+
+### State
+
+State file: `/var/lib/goes-publisher/schedule_state.json`
+
+Persists learned schedule, observations, and failure counts across restarts.
+
+### Image Retention
+
+Published channel and composite images accumulate in `/var/www/goes/current/{SAT}/`. The scheduler automatically cleans images older than `retention_days`:
+
+- **On publish** - cleanup runs after each new frame is published
+- **Hourly** - cleanup runs independently every hour, even if no new data arrives (prevents disk exhaustion during satellite outages)
+
+Timestamps are extracted from filenames (e.g., `G19_13_20260125T153021Z.png`) and compared against the cutoff.
+
+### Monitoring
+
+```bash
+# Service status
+systemctl status goes-scheduler.service
+
+# Live logs
+journalctl -u goes-scheduler -f
+
+# Check learned state
+cat /var/lib/goes-publisher/schedule_state.json | python3 -m json.tool
+```
+
+---
+
 ## Bad Frame Protection
 
 GOES HRIT reception can produce frames with horizontal black bands due to:
@@ -500,15 +570,15 @@ validate_frame.py /path/to/frame.png
 
 ### Service Status
 ```bash
+systemctl status goes-scheduler.service
 systemctl status goes-sse.service
-systemctl status update-goes-fd-web.timer
 systemctl status cleanup-bad-frames.timer
 ```
 
 ### Logs
 ```bash
-# Publisher logs
-journalctl -u update-goes-fd-web.service -f
+# Scheduler logs (publisher + composites + retention cleanup)
+journalctl -u goes-scheduler.service -f
 
 # SSE server logs
 journalctl -u goes-sse.service -f
@@ -519,7 +589,7 @@ journalctl -u cleanup-bad-frames.service -f
 
 ### Timer Status
 ```bash
-systemctl list-timers update-goes-fd-web.timer cleanup-bad-frames.timer satdump-cleanup.timer check-rtlsdr.timer
+systemctl list-timers cleanup-bad-frames.timer satdump-cleanup.timer check-rtlsdr.timer
 ```
 
 ### Verify Updates
@@ -604,7 +674,9 @@ goes-hrit-live-webui/
         uninstall.sh        # Cleanup script
         check.sh            # Verification script
     scripts/
-        update_goes_multi_web.sh  # Publisher for all satellites/sectors
+        goes_scheduler.py         # Predictive publisher + composites + retention
+        goes_composites.py        # Composite image generation
+        update_goes_multi_web.sh  # Legacy publisher for all satellites/sectors
         goes_sse_watch.py         # SSE server + all APIs
         list_history.py           # History frame listing
         make_timelapse_gif.sh     # GIF timelapse generator
@@ -620,6 +692,7 @@ goes-hrit-live-webui/
         show_frame_stats.sh       # Statistics viewer
         check_rtlsdr.sh           # RTL-SDR disconnect alarm
     systemd/
+        goes-scheduler.service
         goes-sse.service
         update-goes-fd-web.service
         update-goes-fd-web.timer
@@ -652,6 +725,11 @@ goes-hrit-live-webui/
     publish_stats.tmp     # Hourly accumulator (internal)
 
 /var/log/satdump_cleanup.log  # SatDump + EMWIN cleanup log
+
+/var/lib/goes-publisher/
+    schedule_state.json          # Scheduler learned state
+
+/etc/goes-scheduler.json         # Scheduler configuration
 ```
 
 ---
