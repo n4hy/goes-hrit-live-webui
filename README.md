@@ -221,6 +221,8 @@ Each directory = one frame timestamp.
 | `log_frame_stats.sh` | Logs frame validation statistics |
 | `show_frame_stats.sh` | Displays RF health statistics |
 | `check_rtlsdr.sh` | RTL-SDR disconnect alarm (desktop popup) |
+| `goes_web_watchdog.sh` | Self-healing watchdog: reruns publisher / restarts SatDump if web output goes stale |
+| `OnOff.sh` | Turns the entire real-time system on/off (repo root, not installed to `/usr/local/bin`) |
 
 ### systemd Units
 
@@ -237,6 +239,8 @@ Each directory = one frame timestamp.
 | `cleanup-bad-frames.timer` | Runs cleanup every 15 minutes |
 | `check-rtlsdr.service` | RTL-SDR disconnect checker |
 | `check-rtlsdr.timer` | Runs RTL-SDR check every 5 minutes |
+| `goes-web-watchdog.service` | Self-healing watchdog run |
+| `goes-web-watchdog.timer` | Runs the watchdog every 2 minutes |
 
 ### Web Files
 
@@ -300,16 +304,42 @@ sudo bash install/install.sh
 ```
 
 This installs:
-- nginx, ffmpeg, python3-pip, pillow, numpy packages
+- nginx, ffmpeg, python3-pil, python3-numpy, jq packages
 - Web UI to `/var/www/goes/`
 - Scripts to `/usr/local/bin/`
 - systemd units to `/etc/systemd/system/`
+- Config templates to `/etc/` (`goes-scheduler.json`, `goes_watchdog.conf`, `satdump_cleanup.conf`) — only if not already present, so local edits are preserved
 - nginx config to `/etc/nginx/sites-available/`
+
+It then enables and starts the full pipeline: `satdump-goes19`, `goes-sse`,
+`goes-scheduler`, and the publisher/cleanup/RTL-SDR/watchdog timers.
 
 3. Open browser:
 ```
 http://<pi-ip>:8080/
 ```
+
+### System On/Off Control
+
+`OnOff.sh` (in the repo root) starts or stops the entire real-time system as a
+unit — RF ingest, SSE/API, scheduler, and all maintenance timers — in the
+correct dependency order:
+
+```bash
+sudo ./OnOff.sh on        # start the whole pipeline now
+sudo ./OnOff.sh off       # stop the whole pipeline now
+sudo ./OnOff.sh restart   # stop then start
+sudo ./OnOff.sh status    # show enabled/active state of every unit
+sudo ./OnOff.sh enable    # start now AND enable at boot
+sudo ./OnOff.sh disable   # stop now AND disable at boot
+```
+
+Notes:
+- The watchdog timer is stopped **first** on shutdown so it cannot restart
+  SatDump mid-teardown, and services start in order (ingest → SSE → scheduler → timers).
+- `off` leaves **nginx** running so the web server (and your SSH-independent
+  access to it) stays up; run `sudo systemctl stop nginx` to take it down too.
+- The script self-elevates with `sudo` if not run as root.
 
 ### Manual Installation
 

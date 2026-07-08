@@ -1,0 +1,40 @@
+{
+  "satellites": {
+    "GOES-19": {
+      "root": "/home/pi/sat/GOES-19/IMAGES/GOES-19/Full Disk",
+      "anchor": "product.cbor",
+      "channels": {
+        "CH2": "G19_2_*.png",
+        "CH7": "G19_7_*.png",
+        "CH8": "G19_8_*.png",
+        "CH13": "G19_13_*.png"
+      }
+    },
+    "GOES-18": {
+      "root": "/home/pi/sat/GOES-18/IMAGES/GOES-18/Full Disk",
+      "anchor": "product.cbor",
+      "channels": {
+        "CH2": "G18_2_*.png",
+        "CH7": "G18_7_*.png",
+        "CH8": "G18_8_*.png",
+        "CH13": "G18_13_*.png"
+      }
+    }
+  },
+  "composites": {
+    "nighttime_microphysics": true,
+    "day_convection": true,
+    "split_window": true
+  },
+  "schedule": {
+    "learning_observations": 6,
+    "relearn_threshold": 3,
+    "tolerance_min_seconds": 30,
+    "tolerance_max_seconds": 120,
+    "default_interval_seconds": 600,
+    "fallback_poll_seconds": 60
+  },
+  "web_root": "/var/www/goes",
+  "state_file": "/var/lib/goes-publisher/schedule_state.json",
+  "config_file": "/etc/goes-scheduler.json"
+}

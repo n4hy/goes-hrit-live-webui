@@ -1,0 +1,25 @@
+[Unit]
+Description=GOES Scheduler Service (Schedule Learning + Composites)
+Documentation=https://github.com/n4hy/goes-hrit-live-webui
+After=network.target
+Wants=goes-sse.service
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/python3 /usr/local/bin/goes_scheduler.py
+Restart=always
+RestartSec=10
+
+# Security hardening
+User=root
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/var/www/goes /var/lib/goes-publisher /var/log
+PrivateTmp=true
+
+# Environment
+Environment=PYTHONUNBUFFERED=1
+
+[Install]
+WantedBy=multi-user.target

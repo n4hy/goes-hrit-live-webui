@@ -58,8 +58,11 @@ delete_one() {
 while IFS= read -r dir; do
   bn="$(basename "${dir}")"
   if [[ "${bn}" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$ ]]; then
+    # Convert "YYYY-MM-DD_HH-MM-SS" -> "YYYY-MM-DD HH:MM:SS" so GNU date can parse it.
+    # (date cannot parse the time field when it uses '-' separators, e.g. "23-30-22".)
+    ts="${bn:0:10} ${bn:11:2}:${bn:14:2}:${bn:17:2}"
     # Convert to epoch; if parse fails, skip.
-    if epoch="$(date -u -d "${bn//_/ }" +%s 2>/dev/null)"; then
+    if epoch="$(date -u -d "${ts}" +%s 2>/dev/null)"; then
       if (( epoch < cutoff_epoch )); then
         delete_one "${dir}"
       fi

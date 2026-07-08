@@ -1,0 +1,11 @@
+[Unit]
+Description=Run GOES web watchdog every 2 minutes
+
+[Timer]
+OnBootSec=90
+OnUnitActiveSec=120
+AccuracySec=10s
+Persistent=true
+
+[Install]
+WantedBy=timers.target

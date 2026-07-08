@@ -464,6 +464,17 @@ class Handler(BaseHTTPRequestHandler):
             if hours not in ("3", "6", "12", "24"):
                 self.send_error_json(400, "Invalid duration")
                 return
+            # frames is spliced into a Python heredoc inside the timelapse script,
+            # so it MUST be a plain integer (guards against injection / SyntaxError).
+            try:
+                frames_i = int(frames)
+            except (TypeError, ValueError):
+                self.send_error_json(400, "Invalid frame count")
+                return
+            if not (1 <= frames_i <= 200):
+                self.send_error_json(400, "Invalid frame count")
+                return
+            frames = str(frames_i)
 
             cmd = [str(TIMELAPSE_SCRIPT), sat, band, hours, frames]
             if reject_bad:

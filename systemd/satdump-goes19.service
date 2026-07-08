@@ -12,6 +12,7 @@ Environment=FREQ=1694.1e6
 Environment=SR=2.048e6
 Environment=GAIN=48
 Environment=OUTROOT=/home/pi/sat/goes19
+WorkingDirectory=/home/pi/sat
 ExecStart=/usr/local/bin/run_satdump_goes19.sh
 Restart=always
 RestartSec=3
