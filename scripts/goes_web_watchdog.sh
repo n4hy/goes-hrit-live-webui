@@ -76,7 +76,9 @@ publisher_sane(){
     warn "SATDUMP_FD_ROOT missing: $SATDUMP_FD_ROOT"
     return 1
   fi
-  if ! ls -1 "$SATDUMP_FD_ROOT" 2>/dev/null | head -n 1 >/dev/null; then
+  # At least one entry present? Use find -print -quit rather than `ls | head`,
+  # which trips `set -o pipefail` via SIGPIPE when the directory is large.
+  if [ -z "$(find "$SATDUMP_FD_ROOT" -mindepth 1 -maxdepth 1 -print -quit 2>/dev/null)" ]; then
     warn "no timestamp dirs under: $SATDUMP_FD_ROOT"
     return 1
   fi
