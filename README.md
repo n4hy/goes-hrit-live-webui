@@ -222,7 +222,8 @@ Each directory = one frame timestamp.
 | `show_frame_stats.sh` | Displays RF health statistics |
 | `check_rtlsdr.sh` | RTL-SDR disconnect alarm (desktop popup) |
 | `goes_web_watchdog.sh` | Self-healing watchdog: reruns publisher / restarts SatDump if web output goes stale |
-| `OnOff.sh` | Turns the entire real-time system on/off (repo root, not installed to `/usr/local/bin`) |
+| `goes_run` | On/off front door: `goes_run on\|off [y\|n]`, where `y` makes it permanent across reboots (repo root) |
+| `OnOff.sh` | Implementation behind `goes_run` — unit ordering and start/stop/enable/disable (repo root, not installed to `/usr/local/bin`) |
 
 ### systemd Units
 
@@ -321,25 +322,43 @@ http://<pi-ip>:8080/
 
 ### System On/Off Control
 
-`OnOff.sh` (in the repo root) starts or stops the entire real-time system as a
-unit — RF ingest, SSE/API, scheduler, and all maintenance timers — in the
-correct dependency order:
+`goes_run` (repo root) is the front door. It starts or stops the entire real-time
+system as a unit — RF ingest, SSE/API, scheduler, and all maintenance timers — in
+the correct dependency order. The second argument says whether the change is
+**permanent** (survives a reboot):
 
 ```bash
-sudo ./OnOff.sh on        # start the whole pipeline now
-sudo ./OnOff.sh off       # stop the whole pipeline now
-sudo ./OnOff.sh restart   # stop then start
-sudo ./OnOff.sh status    # show enabled/active state of every unit
-sudo ./OnOff.sh enable    # start now AND enable at boot
-sudo ./OnOff.sh disable   # stop now AND disable at boot
+sudo ./goes_run on        # start now; still off after a reboot   (n is the default)
+sudo ./goes_run on  n     # same as above, explicit
+sudo ./goes_run on  y     # start now AND come back on every boot
+sudo ./goes_run off       # stop now; boot setting unchanged
+sudo ./goes_run off y     # stop now AND stay off across reboots
+sudo ./goes_run restart   # stop then start
+sudo ./goes_run status    # show enabled/active state of every unit
 ```
+
+> **The stack is currently disabled at boot (since 2026-07-14), deliberately.**
+> The per-frame `make_false_color.py` worker holds a full core, and on a 4-core Pi
+> that wrecks any benchmark running beside it. `n` is the default precisely so a
+> quick `goes_run on` cannot silently undo that — changing the boot behaviour
+> takes an explicit `y`.
+>
+> While the stack is off, **GOES-19 is not recording** — missed imagery cannot be
+> backfilled — and `/var/www/goes` stops updating. `goes_run on` resumes both.
+
+`goes_run` delegates to **`OnOff.sh`**, which holds the actual unit logic and can
+still be called directly (`on|off|restart|status|enable|disable`, where
+`enable`/`disable` are the permanent forms).
 
 Notes:
 - The watchdog timer is stopped **first** on shutdown so it cannot restart
   SatDump mid-teardown, and services start in order (ingest → SSE → scheduler → timers).
 - `off` leaves **nginx** running so the web server (and your SSH-independent
   access to it) stays up; run `sudo systemctl stop nginx` to take it down too.
-- The script self-elevates with `sudo` if not run as root.
+- Both scripts self-elevate with `sudo` if not run as root.
+- `check-rtlsdr.timer` is listed in the stack but is intentionally left **enabled**
+  while the rest is off: it only runs `lsusb` to raise the dongle-unplugged alarm,
+  costs nothing, and serves the RTL-SDR generally (not just GOES).
 
 ### Manual Installation
 

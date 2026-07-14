@@ -91,11 +91,16 @@ stop_all() {
 status_all() {
   printf '%-28s %-10s %s\n' "UNIT" "ENABLED" "ACTIVE"
   printf '%-28s %-10s %s\n' "----" "-------" "------"
+  local en ac
   for u in "$WEB_SERVICE" "${SERVICES[@]}" "${TIMERS[@]}"; do
     if have_unit "$u"; then
-      printf '%-28s %-10s %s\n' "$u" \
-        "$(systemctl is-enabled "$u" 2>/dev/null || echo '-')" \
-        "$(systemctl is-active  "$u" 2>/dev/null || echo '-')"
+      # `systemctl is-enabled/is-active` PRINT the state and still exit non-zero
+      # when it isn't enabled/active, so a `|| echo '-'` fires in addition to the
+      # real output ("disabled\n-") and wraps the row. Keep stdout, drop the exit
+      # status, and only substitute '-' when nothing was printed at all.
+      en=$(systemctl is-enabled "$u" 2>/dev/null) || true
+      ac=$(systemctl is-active  "$u" 2>/dev/null) || true
+      printf '%-28s %-10s %s\n' "$u" "${en:--}" "${ac:--}"
     else
       printf '%-28s %-10s %s\n' "$u" "-" "MISSING"
     fi

@@ -1,0 +1,85 @@
+#!/usr/bin/env bash
+#
+# goes_run - on/off switch for the GOES HRIT real-time pipeline.
+#
+# Usage:
+#   goes_run on  [y|n]    Start the pipeline now
+#   goes_run off [y|n]    Stop the pipeline now
+#   goes_run restart      Stop then start (boot state untouched)
+#   goes_run status       Show enabled/active state of every unit
+#
+# The second argument says whether the change is PERMANENT (survives a reboot):
+#
+#   n   this boot only -- DEFAULT. Starts/stops the units now and leaves the
+#       boot setting exactly as it is.
+#   y   permanent      -- also enables/disables the units at boot.
+#
+#   goes_run on  n   start now; still off after a reboot        (default)
+#   goes_run on  y   start now; comes back on every boot
+#   goes_run off n   stop now; boot setting unchanged           (default)
+#   goes_run off y   stop now; stays off across reboots
+#
+# The units are DISABLED at boot as of 2026-07-14, deliberately: the per-frame
+# `make_false_color.py` worker holds a full core, and on a 4-core Pi that wrecks
+# any benchmark running beside it (it once faked a 149x "OpenMP bug" that did not
+# exist). `n` is the default so a quick `goes_run on` cannot silently undo that --
+# you have to type `y` to change the boot behaviour.
+#
+# While the stack is off, GOES-19 is NOT recording -- missed imagery cannot be
+# backfilled -- and the site under /var/www/goes stops updating. `on` resumes both.
+#
+# Implementation lives in OnOff.sh, which handles unit ordering (timers stop
+# first so the watchdog cannot relaunch SatDump mid-teardown) and leaves nginx
+# up. This is just the named front door; keep the logic there, not here.
+#
+set -euo pipefail
+
+HERE="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+IMPL="$HERE/OnOff.sh"
+
+usage() {
+  cat >&2 <<EOF
+Usage: ${0##*/} on|off [y|n]
+       ${0##*/} restart|status
+
+  y   permanent      - also enable/disable the units at boot
+  n   this boot only - default; leaves the boot setting alone
+
+The GOES stack is intentionally disabled at boot; 'on' alone does not change that.
+EOF
+  exit 2
+}
+
+[ -x "$IMPL" ] || { echo "${0##*/}: cannot find executable $IMPL" >&2; exit 1; }
+
+action="${1:-}"
+permanent="${2:-n}"
+
+case "$action" in
+  restart|status) exec "$IMPL" "$action" ;;
+  on|off)         ;;
+  *)              usage ;;
+esac
+
+case "$permanent" in
+  n|N|no|No|NO)    perm=0 ;;
+  y|Y|yes|Yes|YES) perm=1 ;;
+  *)               echo "${0##*/}: second argument must be y or n (got '$permanent')" >&2; usage ;;
+esac
+
+# OnOff.sh verbs: on/off = start/stop only; enable/disable = boot state + start/stop.
+if [ "$action" = "on" ]; then
+  if [ "$perm" -eq 1 ]; then
+    echo "Enabling the GOES stack at boot (undoes the 2026-07-14 decision to leave"
+    echo "it off; it will compete for cores with anything you benchmark)."
+    exec "$IMPL" enable
+  fi
+  exec "$IMPL" on
+else
+  if [ "$perm" -eq 1 ]; then
+    echo "Disabling the GOES stack at boot. GOES-19 will not record; missed"
+    echo "imagery cannot be backfilled."
+    exec "$IMPL" disable
+  fi
+  exec "$IMPL" off
+fi
