@@ -118,5 +118,7 @@ for u in satdump-goes19.service goes-scheduler.service goes-sse.service \
   printf '  %-28s %s\n' "$u" "$(systemctl is-active "$u" 2>/dev/null)"
 done
 echo ""
-echo "Control the whole pipeline with:  sudo ./OnOff.sh {on|off|restart|status}"
+echo "Control the whole pipeline with:  sudo ./goes_run {on|off} [y|n]"
+echo "  y = permanent (also enables/disables at boot); n = this boot only (default)"
+echo "  also:  sudo ./goes_run {restart|status}"
 echo "LAN UI: http://<pi>:8080/"

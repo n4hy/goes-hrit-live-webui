@@ -16,6 +16,26 @@ This repository contains everything required to:
 
 This is not a demo system - it is designed as **infrastructure**.
 
+> ### ⏸️ This deployment is currently OFF
+>
+> As of **2026-07-14** the pipeline is stopped and **disabled at boot**, on purpose.
+> This Pi is also used for CPU kernel benchmarking, and the per-frame
+> `make_false_color.py` worker holds a full core — on a 4-core machine that
+> silently corrupts any measurement running beside it.
+>
+> **GOES-19 is not recording while it is off, and missed imagery cannot be
+> backfilled.** The web UI under `/var/www/goes` still serves whatever was last
+> published, but stops updating.
+>
+> ```bash
+> sudo ./goes_run status    # what is actually running right now
+> sudo ./goes_run on        # bring it back for this boot only
+> sudo ./goes_run on y      # bring it back permanently (re-enables at boot)
+> ```
+>
+> See [System On/Off Control](#system-onoff-control). Nothing about the install is
+> broken — it is switched off, and `goes_run on` is all it takes.
+
 ---
 
 ## System Architecture

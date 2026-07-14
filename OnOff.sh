@@ -2,6 +2,11 @@
 #
 # OnOff.sh - turn the entire GOES HRIT real-time system on or off.
 #
+# NOTE: `goes_run` (same directory) is the front door and the documented way in:
+#   goes_run on|off [y|n]   where y = permanent (boot too), n = this boot only.
+# It maps onto the verbs below. This script holds the unit logic; use it directly
+# when you want a specific verb. Keep the logic here, not in goes_run.
+#
 # The pipeline is:
 #   satdump-goes19.service   RF ingest / HRIT decode (SatDump)
 #   goes-sse.service         SSE server + web APIs
@@ -10,12 +15,17 @@
 #   + nginx (web frontend on :8080)
 #
 # Usage:
-#   sudo ./OnOff.sh on        Start the whole pipeline now
-#   sudo ./OnOff.sh off       Stop the whole pipeline now
+#   sudo ./OnOff.sh on        Start the whole pipeline now      (goes_run on n)
+#   sudo ./OnOff.sh off       Stop the whole pipeline now       (goes_run off n)
 #   sudo ./OnOff.sh restart   Stop then start
 #   sudo ./OnOff.sh status    Show enabled/active state of every unit
-#   sudo ./OnOff.sh enable    Start now AND enable at boot
-#   sudo ./OnOff.sh disable   Stop now AND disable at boot
+#   sudo ./OnOff.sh enable    Start now AND enable at boot      (goes_run on y)
+#   sudo ./OnOff.sh disable   Stop now AND disable at boot      (goes_run off y)
+#
+# The stack is DISABLED at boot as of 2026-07-14, deliberately (see README):
+# the per-frame make_false_color.py worker holds a full core and wrecks any
+# benchmark running beside it on this 4-core Pi. `on`/`off` do not change that;
+# only `enable`/`disable` do.
 #
 set -euo pipefail
 
